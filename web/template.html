@@ -1,0 +1,352 @@
+<title>Car2Roblox</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* A garage at dusk. The page background and the 3D scene share one palette (the --scene-* tokens):
+   day colours in the light theme, dusk colours in the dark theme. */
+:root {
+  --bg: #cfdcf0; --surface: #ffffff; --surface-2: #eef2f8; --ink: #101828; --ink-2: #475467; --line: #cdd6e4;
+  --card: rgba(255, 255, 255, .84); --card-line: rgba(16, 24, 40, .12); --shadow: 0 10px 30px rgba(24, 40, 80, .16);
+  --accent: #1f5fe0; --accent-2: #6a4df0; --accent-ink: #ffffff; --accent-soft: #e1ebfd;
+  --warn: #8a5300; --warn-bg: #fff1d3; --ok: #17724a; --ok-bg: #dff3e8; --bad: #b3261e; --bad-bg: #fde7e4;
+  --scene-top: #6ea0e2; --scene-mid: #aac8ee; --scene-hor: #e8eef6; --scene-glow: #fff4d6;
+  --scene-ground: #c6ceda; --scene-ground-far: #e2e8f0; --scene-grid: #8f9fbb;
+  --scene-sky: #cddcf5; --scene-gnd: #5c5c66; --scene-wire: #0f1c3a; --scene-bg: #e8eef6;
+  --f-display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #090d20; --surface: #141a33; --surface-2: #1b2342; --ink: #eaeefb; --ink-2: #a3aed0; --line: #2c3866;
+    --card: rgba(16, 22, 46, .80); --card-line: rgba(140, 165, 255, .18); --shadow: 0 12px 34px rgba(0, 0, 0, .45);
+    --accent: #7aa7ff; --accent-2: #9b86ff; --accent-ink: #0a1026; --accent-soft: #1d2b55;
+    --warn: #f3bf62; --warn-bg: #3a2c12; --ok: #62d9a1; --ok-bg: #12301f; --bad: #ff8f86; --bad-bg: #3d1a18;
+    --scene-top: #090d20; --scene-mid: #293470; --scene-hor: #d67e92; --scene-glow: #ffaa78;
+    --scene-ground: #0f1426; --scene-ground-far: #423e70; --scene-grid: #4678d2;
+    --scene-sky: #94a3f2; --scene-gnd: #2a2c42; --scene-wire: #dfe8ff; --scene-bg: #0f1426; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #090d20; --surface: #141a33; --surface-2: #1b2342; --ink: #eaeefb; --ink-2: #a3aed0; --line: #2c3866;
+  --card: rgba(16, 22, 46, .80); --card-line: rgba(140, 165, 255, .18); --shadow: 0 12px 34px rgba(0, 0, 0, .45);
+  --accent: #7aa7ff; --accent-2: #9b86ff; --accent-ink: #0a1026; --accent-soft: #1d2b55;
+  --warn: #f3bf62; --warn-bg: #3a2c12; --ok: #62d9a1; --ok-bg: #12301f; --bad: #ff8f86; --bad-bg: #3d1a18;
+  --scene-top: #090d20; --scene-mid: #293470; --scene-hor: #d67e92; --scene-glow: #ffaa78;
+  --scene-ground: #0f1426; --scene-ground-far: #423e70; --scene-grid: #4678d2;
+  --scene-sky: #94a3f2; --scene-gnd: #2a2c42; --scene-wire: #dfe8ff; --scene-bg: #0f1426; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); padding-block: 22px 44px; min-height: 100vh;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* ---- page background art: sky, horizon glow, perspective grid floor (pure CSS, works offline) ---- */
+.bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  background: linear-gradient(to bottom, var(--scene-top) 0%, var(--scene-mid) 30%, var(--scene-hor) 54%, var(--scene-ground-far) 54.3%, var(--scene-ground) 82%); }
+.bg::before { content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 46% 26% at 30% 54%, color-mix(in srgb, var(--scene-glow) 62%, transparent), transparent 72%),
+              radial-gradient(ellipse 80% 14% at 50% 54.4%, color-mix(in srgb, var(--scene-hor) 70%, transparent), transparent 80%); }
+.bg .floor { position: absolute; left: -80%; right: -80%; top: 54%; height: 150vh; transform-origin: 50% 0; transform: perspective(360px) rotateX(63deg);
+  background-image: linear-gradient(var(--scene-grid) 1.5px, transparent 1.5px), linear-gradient(90deg, var(--scene-grid) 1.5px, transparent 1.5px);
+  background-size: 64px 64px; background-position: center top; opacity: .55;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 38%); mask-image: linear-gradient(to bottom, transparent 0%, #000 38%); }
+.bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 55%, color-mix(in srgb, var(--bg) 55%, transparent) 100%); }
+
+.wrap { max-width: 1260px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h2 { font-size: 21px; text-transform: uppercase; letter-spacing: .06em; }
+h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-2); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+h3::before { content: ""; width: 14px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+
+/* ---- header ---- */
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 24px; margin-bottom: 18px; padding: 4px 2px; }
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.logo { width: 52px; height: 52px; flex: none; filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--accent) 45%, transparent)); }
+.brand h1 { font-size: 40px; line-height: .95; text-transform: uppercase; letter-spacing: .05em; color: #fff; text-shadow: 0 2px 18px rgba(8, 14, 40, .55); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ver { font-family: var(--f-mono); font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 500; padding: 2px 8px; border-radius: 99px; color: #fff; border: 1px solid rgba(255, 255, 255, .5); background: rgba(8, 14, 40, .32); text-shadow: none; }
+.brand p { margin: 5px 0 0; color: rgba(255, 255, 255, .92); max-width: 58ch; text-shadow: 0 1px 10px rgba(8, 14, 40, .6); }
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chips li { font-family: var(--f-mono); font-size: 12px; padding: 4px 10px; border-radius: 99px; color: #fff; background: rgba(8, 14, 40, .38); border: 1px solid rgba(255, 255, 255, .32); backdrop-filter: blur(6px); }
+.chips li.to { background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-color: transparent; color: var(--accent-ink); font-weight: 500; }
+:root:not([data-theme="dark"]) .brand h1 { color: #0b1630; text-shadow: 0 1px 0 rgba(255, 255, 255, .6); }
+:root:not([data-theme="dark"]) .brand p { color: #1d2a4a; text-shadow: none; }
+:root:not([data-theme="dark"]) .ver { color: #0b1630; border-color: rgba(11, 22, 48, .35); background: rgba(255, 255, 255, .55); }
+:root:not([data-theme="dark"]) .chips li { color: #0b1630; background: rgba(255, 255, 255, .6); border-color: rgba(11, 22, 48, .22); }
+:root:not([data-theme="dark"]) .chips li.to { color: #fff; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-color: transparent; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand h1 { color: #fff; text-shadow: 0 2px 18px rgba(8, 14, 40, .55); }
+  :root:not([data-theme="light"]) .brand p { color: rgba(255, 255, 255, .92); text-shadow: 0 1px 10px rgba(8, 14, 40, .6); }
+  :root:not([data-theme="light"]) .ver { color: #fff; border-color: rgba(255, 255, 255, .5); background: rgba(8, 14, 40, .32); }
+  :root:not([data-theme="light"]) .chips li { color: #fff; background: rgba(8, 14, 40, .38); border-color: rgba(255, 255, 255, .32); }
+  :root:not([data-theme="light"]) .chips li.to { color: var(--accent-ink); background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-color: transparent; }
+}
+
+/* ---- layout ---- */
+.app { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+.col { display: contents; }
+#load { order: 1; } #stage { order: 2; } #settings { order: 3; } #output { order: 4; }
+@media (min-width: 980px) {
+  .app { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; }
+  .col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+}
+.card { background: var(--card); border: 1px solid var(--card-line); border-radius: 14px; padding: 16px; min-width: 0; box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25); }
+#load { display: grid; gap: 12px; }
+#settings { display: grid; gap: 18px; }
+#stage { padding: 0; overflow: hidden; }
+#output { display: grid; gap: 14px; }
+.drop { border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 12px; padding: 16px; display: grid; gap: 10px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); transition: border-color .15s, background .15s; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop strong { font-family: var(--f-display); font-size: 22px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.hint { color: var(--ink-2); font-size: 12.5px; margin: 0; }
+.hint.bad { color: var(--bad); }
+input[aria-invalid=true] { border-color: var(--bad) !important; }
+
+/* ---- controls ---- */
+button, .btn { font: inherit; font-weight: 500; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 13px; cursor: pointer; min-height: 36px; transition: border-color .12s, transform .12s, filter .12s, background .12s; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; font-weight: 600; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 38%, transparent); }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); border-color: transparent; }
+button[aria-pressed="true"] { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-color: transparent; }
+button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+label { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); min-width: 0; }
+label.inline { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
+label.inline.sub { padding-left: 24px; }
+label.dim { opacity: .5; }
+input[type=text], input[type=number], select { font: inherit; color: var(--ink); background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; min-height: 36px; width: 100%; min-width: 0; transition: border-color .12s, box-shadow .12s; }
+input[type=text]:focus, input[type=number]:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+input:disabled { opacity: .5; }
+input[type=color] { width: 100%; height: 36px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.group { display: grid; gap: 11px; }
+.group + .group { border-top: 1px solid var(--card-line); padding-top: 16px; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--surface) 80%, transparent); }
+.seg label { flex: 1 0 auto; min-width: auto; display: block; position: relative; }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; width: 100%; height: 100%; cursor: pointer; }
+.seg span { display: block; text-align: center; padding: 7px 12px; color: var(--ink); font-size: 13px; font-weight: 500; border-right: 1px solid var(--line); white-space: nowrap; transition: background .12s; }
+.seg label:last-child span { border-right: 0; }
+.seg label:hover span { background: var(--accent-soft); }
+.seg input:checked + span { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg.small span { padding: 6px 10px; }
+.status { font-size: 13px; padding: 9px 11px; border-radius: 8px; background: color-mix(in srgb, var(--surface-2) 80%, transparent); color: var(--ink-2); overflow-wrap: anywhere; border-left: 3px solid var(--line); }
+.status.ok { background: var(--ok-bg); color: var(--ok); border-left-color: var(--ok); }
+.status.err { background: var(--bad-bg); color: var(--bad); border-left-color: var(--bad); }
+
+/* ---- stage ---- */
+.stagebar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--card-line); }
+.viewport { position: relative; background: var(--scene-bg); aspect-ratio: 16 / 10; min-height: 300px; max-height: 70vh; width: 100%; }
+@media (max-width: 600px) { .viewport { aspect-ratio: 1 / 1; min-height: 280px; } .drop { padding: 12px; } .brand h1 { font-size: 34px; } .logo { width: 44px; height: 44px; } }
+@media (pointer: coarse) { .keys { display: none; } .hud { bottom: 86px; } }
+canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; cursor: grab; }
+canvas#gl:active { cursor: grabbing; }
+.chip { position: absolute; right: 10px; bottom: 10px; font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-2); background: color-mix(in srgb, var(--surface) 78%, transparent); border: 1px solid var(--card-line); border-radius: 6px; padding: 3px 8px; pointer-events: none; backdrop-filter: blur(6px); }
+.hud { position: absolute; left: 12px; bottom: 12px; display: none; gap: 4px; pointer-events: none; }
+.hud.on { display: grid; }
+.speed { font-family: var(--f-display); font-weight: 600; font-size: 48px; line-height: .95; color: var(--ink); font-variant-numeric: tabular-nums; text-shadow: 0 1px 10px color-mix(in srgb, var(--surface) 80%, transparent); }
+.speed small { font-size: 16px; color: var(--ink-2); letter-spacing: .06em; margin-left: 4px; }
+.keys { font-size: 12px; color: var(--ink-2); background: color-mix(in srgb, var(--surface) 82%, transparent); border: 1px solid var(--card-line); border-radius: 6px; padding: 3px 8px; width: fit-content; max-width: 100%; }
+.touch { position: absolute; left: 0; right: 0; bottom: 0; display: none; justify-content: space-between; padding: 10px max(12px, env(safe-area-inset-left, 0px)) 12px; pointer-events: none; }
+.touch.on { display: flex; }
+@media (pointer: fine) { .touch.on { display: none; } }
+.touch .pad { display: flex; gap: 8px; pointer-events: auto; }
+.touch button { min-width: 64px; min-height: 56px; font-weight: 600; background: color-mix(in srgb, var(--surface) 70%, transparent); touch-action: none; user-select: none; -webkit-user-select: none; }
+.nogl { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink-2); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--card-line); }
+.stats div { padding: 11px 14px; border-right: 1px solid var(--card-line); min-width: 0; }
+.stats div:last-child { border-right: 0; }
+.stats b { display: block; font-family: var(--f-display); font-size: 26px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#stSize { font-size: 21px; padding-block: 3px 2px; }
+.stats span { font-size: 11.5px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .08em; }
+@media (max-width: 600px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stats div:nth-child(2) { border-right: 0; } .stats div:nth-child(-n+2) { border-bottom: 1px solid var(--card-line); } }
+
+/* ---- results ---- */
+ul.notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+ul.notes li { padding: 8px 11px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 13px; overflow-wrap: anywhere; }
+.safety { border: 1px solid var(--card-line); border-radius: 10px; padding: 11px 13px; display: grid; gap: 6px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.safety.hit { border-color: var(--warn); background: var(--warn-bg); }
+.safety ul { margin: 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
+.safety .hint { color: inherit; opacity: .85; }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+ol.steps + .hint { margin-top: 8px; }
+code, pre, textarea { font-family: var(--f-mono); font-size: 12px; }
+textarea { width: 100%; min-height: 160px; resize: vertical; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+pre#log { margin: 8px 0 0; max-height: 240px; overflow: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+details > summary { cursor: pointer; font-weight: 500; }
+details[open] > summary { margin-bottom: 6px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--surface); padding: 9px 15px; border-radius: 8px; font-size: 13px; z-index: 20; max-width: calc(100vw - 32px); box-shadow: var(--shadow); }
+.foot { margin-top: 20px; color: var(--ink-2); font-size: 12.5px; max-width: 80ch; padding: 10px 14px; border-radius: 10px; background: var(--card); border: 1px solid var(--card-line); width: fit-content; max-width: 100%; backdrop-filter: blur(10px); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="bg" aria-hidden="true"><div class="floor"></div></div>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 48 48" role="img" aria-label="Car2Roblox logo">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b7bff"/><stop offset="1" stop-color="#8a5cf6"/></linearGradient></defs>
+        <rect x="1" y="1" width="46" height="46" rx="13" fill="url(#lg)"/>
+        <path d="M8 29.5 9.6 24c.5-1.6 1.7-2.4 3.4-2.4h4.2l3.2-4.6c.6-.9 1.4-1.3 2.5-1.3h6.2c1.1 0 2 .5 2.6 1.4l2.3 3.4 2 .6c1.6.5 2.4 1.6 2.4 3.3v5.1z" fill="#fff"/>
+        <circle cx="16" cy="30.5" r="4.6" fill="#141a33" stroke="#fff" stroke-width="2"/><circle cx="33" cy="30.5" r="4.6" fill="#141a33" stroke="#fff" stroke-width="2"/>
+        <circle cx="16" cy="30.5" r="1.4" fill="#fff"/><circle cx="33" cy="30.5" r="1.4" fill="#fff"/>
+      </svg>
+      <div>
+        <h1>Car2Roblox <span class="ver" id="ver"></span></h1>
+        <p>Turn GTA San Andreas, GTA V and BeamNG cars into drivable Roblox Studio models. Everything runs in this page; your files are never uploaded.</p>
+      </div>
+    </div>
+    <ul class="chips" aria-label="Supported sources"><li>GTA SA</li><li>GTA V</li><li>BeamNG</li><li class="to">Roblox Studio</li></ul>
+  </header>
+
+  <main class="app">
+<div class="col">
+    <section id="load" class="card" aria-label="Load a car">
+      <div class="drop" id="drop">
+        <strong>Drop car files or a folder</strong>
+        <p class="hint">GTA San Andreas: the <code>.dff</code> and its <code>.txd</code>. BeamNG: the mod <code>.zip</code> or the vehicle folder. GTA V: export to <code>.obj</code>, <code>.glb</code> or <code>.dae</code> first, with its textures.</p>
+        <div class="row">
+          <button type="button" class="primary" id="pickFiles">Choose files</button>
+          <button type="button" id="pickFolder">Choose folder</button>
+          <button type="button" id="sampleBtn">Sample car</button>
+        </div>
+        <input type="file" id="fileInput" multiple hidden>
+        <input type="file" id="folderInput" webkitdirectory hidden>
+      </div>
+      <div id="srcRow" class="grid2" hidden>
+        <label>Model file<select id="srcSelect"></select></label>
+        <label id="vehWrap" hidden>Vehicle<select id="vehSelect"></select></label>
+        <label id="cfgWrap" hidden>Configuration<select id="cfgSelect"></select></label>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite">Loading the sample car.</div>
+    </section>
+
+    <section id="settings" class="card" aria-label="Settings">
+      <div class="group">
+        <h3>Size and direction</h3>
+        <label>Name<input type="text" id="oName" placeholder="Car name" maxlength="40"></label>
+        <div class="grid2">
+          <label>Scale (1 = real size)<input type="number" id="oScale" value="1" min="0.05" max="20" step="0.05"></label>
+          <label>Or set length (studs)<input type="number" id="oLength" min="2" max="500" step="1" placeholder="auto"></label>
+        </div>
+        <div class="grid2">
+          <label>Source units<select id="oUnit"><option value="">Auto</option><option value="m">Metres</option><option value="cm">Centimetres</option><option value="mm">Millimetres</option><option value="in">Inches</option><option value="ft">Feet</option></select></label>
+          <label class="inline" style="align-self:end;min-height:36px"><input type="checkbox" id="oFlip"> Flip front and back</label>
+        </div>
+        <label class="inline"><input type="checkbox" id="oAxes"> Set the axes by hand</label>
+        <div class="grid3" id="axesRow" hidden>
+          <label>Right<select id="axR"></select></label><label>Up<select id="axU"></select></label><label>Front<select id="axF"></select></label>
+        </div>
+      </div>
+      <div class="group">
+        <h3>Paint</h3>
+        <div class="grid3">
+          <label>Primary<input type="color" id="oPaint1" value="#2f6db5"></label>
+          <label>Secondary<input type="color" id="oPaint2" value="#e8e8e8"></label>
+          <label>Tertiary<input type="color" id="oPaint3" value="#202020"></label>
+        </div>
+        <div class="row"><button type="button" id="paintReset">Use the car's own colours</button></div>
+      </div>
+      <div class="group">
+        <h3>Parts to keep</h3>
+        <div class="grid2">
+          <label class="inline"><input type="checkbox" id="oGlass" checked> Glass</label>
+          <label class="inline"><input type="checkbox" id="oInterior" checked> Interior</label>
+          <label class="inline"><input type="checkbox" id="oLights" checked> Lights</label>
+          <label class="inline"><input type="checkbox" id="oLod"> Low-detail copies</label>
+        </div>
+        <label class="inline"><input type="checkbox" id="oTires" checked> Add tires if the model has none</label>
+        <label class="inline"><input type="checkbox" id="oNewTires"> Always use new tires (keep the wheel positions, replace the look)</label>
+        <p class="hint">Many mods ship without wheels, with a wheel left in the middle of the car, or with only some of them. Wheels are moved, copied or generated so all four sit on their hubs. If a mod's own wheels still look wrong, tick "Always use new tires". Turn "Add tires" off if the body already has its wheels built in.</p>
+      </div>
+      <div class="group">
+        <h3>Roblox limits</h3>
+        <div class="grid3">
+          <label>Triangles per mesh<input type="number" id="oMaxTris" value="20000" min="1000" max="20000" step="1000"></label>
+          <label>Whole car budget<input type="number" id="oTarget" min="500" step="500" placeholder="no limit"></label>
+          <label>Texture size<select id="oTex"><option>256</option><option>512</option><option selected>1024</option><option>2048</option></select></label>
+        </div>
+        <p class="hint">Meshes over the triangle limit are split into several parts without losing detail. A whole-car budget simplifies the model instead.</p>
+      </div>
+      <div class="group">
+        <h3>Studio car</h3>
+        <label class="inline"><input type="checkbox" id="oRig" checked> Make drivable (adds the Studio driving script)</label>
+        <div class="grid2" id="driveOpts">
+          <label>Drivetrain
+            <span class="seg" role="radiogroup" aria-label="Drivetrain">
+              <label><input type="radio" name="oDrive" value="awd" checked><span>AWD</span></label>
+              <label><input type="radio" name="oDrive" value="rwd"><span>RWD</span></label>
+              <label><input type="radio" name="oDrive" value="fwd"><span>FWD</span></label>
+            </span>
+          </label>
+          <label id="oSpeedWrap">Top speed (km/h)<input type="number" id="oSpeed" min="1" max="1000" step="5" placeholder="default (about 91)" inputmode="numeric" aria-describedby="oSpeedMsg"><span class="hint bad" id="oSpeedMsg" hidden></span></label>
+        </div>
+        <label class="inline"><input type="checkbox" id="oObj" checked> Also write .obj pieces</label>
+      </div>
+    </section>
+
+</div>
+<div class="col">
+    <section id="stage" class="card" aria-label="Preview and test drive">
+      <div class="stagebar">
+        <div class="row">
+          <button type="button" id="driveBtn" aria-pressed="false" disabled>Drive</button>
+          <button type="button" id="spinBtn" aria-pressed="false">Spin</button>
+          <button type="button" id="viewBtn">Reset view</button>
+        </div>
+        <div class="row">
+          <div class="seg small" role="radiogroup" aria-label="View mode">
+            <label><input type="radio" name="vMode" value="shaded" checked><span>Shaded</span></label>
+            <label><input type="radio" name="vMode" value="wire"><span>Wireframe</span></label>
+            <label><input type="radio" name="vMode" value="pieces"><span>Pieces</span></label>
+          </div>
+          <button type="button" id="saveBtn" disabled>Save picture</button>
+        </div>
+      </div>
+      <div class="viewport" id="viewport">
+        <canvas id="gl" tabindex="0" aria-label="3D view of the converted car. Drag to orbit, scroll to zoom."></canvas>
+        <span class="chip" id="tag">Arrow = front</span>
+        <div class="hud" id="hud"><div class="speed"><span id="kmh">0</span><small>km/h</small></div><div class="keys">W / S gas and brake &middot; A / D steer &middot; Space handbrake &middot; R reset</div></div>
+        <div class="touch" id="touch"><div class="pad"><button type="button" data-k="left">Left</button><button type="button" data-k="right">Right</button></div><div class="pad"><button type="button" data-k="brake">Brake</button><button type="button" data-k="gas">Gas</button></div></div>
+        <div class="nogl" id="nogl" hidden>This browser cannot start WebGL, so there is no 3D preview. Converting and downloading still work.</div>
+      </div>
+      <div class="stats" id="stats"><div><b id="stPieces">-</b><span>Pieces</span></div><div><b id="stTris">-</b><span>Triangles</span></div><div><b id="stSize">-</b><span>Studs W x H x L</span></div><div><b id="stWheels">-</b><span>Wheels</span></div></div>
+    </section>
+
+    <section id="output" class="card" aria-label="Result">
+      <div class="row" style="justify-content:space-between">
+        <h2>Result</h2>
+        <div class="row">
+          <button type="button" id="copyBtn" disabled>Copy Studio script</button>
+          <button type="button" class="primary" id="dlBtn" disabled>Download .zip</button>
+        </div>
+      </div>
+      <div id="notes" hidden><ul class="notes" id="noteList"></ul></div>
+      <div class="safety" id="safety"><h3>Safety filter</h3><div id="safetyBody" class="hint">Checks part, material and texture names and the files in mod archives. It cannot see what a picture shows.</div></div>
+      <details open>
+        <summary>Put it in Roblox Studio</summary>
+        <ol class="steps">
+          <li>Unzip the download. It also holds <code>preview.png</code>, a picture of the converted car for the Roblox upload page.</li>
+          <li>In Studio choose <b>File &gt; Import</b> and pick the <code>.glb</code>. Set Scale Unit to Studs and tick Import Only As Model.</li>
+          <li>Select the imported Model, open <b>View &gt; Command Bar</b>, paste the setup script and press Enter.</li>
+          <li>Press Play and sit in the car. W/S drives, A/D steers.</li>
+        </ol>
+        <p class="hint">The setup script has been run against a stand-in for the Roblox API, not in Studio itself. Use <b>Drive</b> above to check size, wheels and steering first; it is a quick preview, not Roblox physics.</p>
+      </details>
+      <details id="scriptBox" hidden><summary>Studio setup script</summary><textarea id="scriptText" readonly spellcheck="false"></textarea></details>
+      <details><summary>Log</summary><pre id="log"></pre></details>
+    </section>
+</div>
+  </main>
+  <p class="foot">Only convert models you made or are licensed to use. GTA and BeamNG assets belong to their creators, and Roblox's rules apply to anything you upload. <span id="verFoot" style="white-space:nowrap;font-family:var(--f-mono);font-size:12px"></span></p>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+/*__SCRIPT__*/
+</script>

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "car2roblox"
+dynamic = ["version"]
+description = "Convert GTA San Andreas, GTA V (exported) and BeamNG car models into Roblox Studio assets"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24", "Pillow>=10.0"]
+
+[project.scripts]
+car2roblox = "car2roblox.cli:main"
+
+[project.gui-scripts]
+car2roblox-gui = "car2roblox.gui:run_gui"
+
+[tool.setuptools.dynamic]
+version = {attr = "car2roblox.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["car2roblox*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

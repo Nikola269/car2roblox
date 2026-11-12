@@ -1,0 +1,62 @@
+name: Build Windows exe
+
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.2.0 to also publish a release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Build GUI exe
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed --name Car2Roblox
+          --icon assets\icon.ico --collect-submodules car2roblox
+          --hidden-import PIL.DdsImagePlugin --hidden-import PIL.PngImagePlugin
+          --hidden-import PIL.JpegImagePlugin --hidden-import PIL.TgaImagePlugin
+          --hidden-import PIL.BmpImagePlugin launcher.py
+
+      - name: Build command-line exe
+        run: >
+          pyinstaller --noconfirm --onefile --console --name car2roblox-cli
+          --icon assets\icon.ico --collect-submodules car2roblox
+          --hidden-import PIL.DdsImagePlugin --hidden-import PIL.PngImagePlugin
+          --hidden-import PIL.JpegImagePlugin --hidden-import PIL.TgaImagePlugin
+          --hidden-import PIL.BmpImagePlugin launcher.py
+
+      - name: Smoke test the built exe
+        run: dist\car2roblox-cli.exe --version
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Setup.exe install wizard
+        shell: pwsh
+        run: |
+          $ver = python -c "import car2roblox; print(car2roblox.__version__)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" installer\Car2Roblox.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Car2Roblox-windows
+          path: dist/*.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
