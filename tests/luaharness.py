@@ -230,12 +230,18 @@ for _, d in ipairs(car:GetDescendants()) do
     add("pos_" .. d.Name, string.format("%.3f,%.3f,%.3f", d.CFrame.Position.X, d.CFrame.Position.Y, d.CFrame.Position.Z))
   end
 end
-local nocol, colliders = 0, 0
+local nocol, colliders, uprights, suspensions, springs, knuckles = 0, 0, 0, 0, 0, 0
 for _, d in ipairs(car:GetDescendants()) do
   if d.ClassName == "NoCollisionConstraint" then nocol = nocol + 1 end
   if d:IsA("BasePart") and string.sub(d.Name, 1, 14) == "WheelCollider_" then colliders = colliders + 1 end
+  if d:IsA("BasePart") and string.sub(d.Name, 1, 8) == "Upright_" then uprights = uprights + 1 end
+  if d:IsA("BasePart") and string.sub(d.Name, 1, 8) == "Knuckle_" then knuckles = knuckles + 1 end
+  if d.ClassName == "PrismaticConstraint" then suspensions = suspensions + 1 end
+  if d.ClassName == "SpringConstraint" then springs = springs + 1 end
 end
 add("nocollide", nocol) add("colliders", colliders)
+add("uprights", uprights) add("suspensions", suspensions) add("springs", springs) add("knuckles", knuckles)
+add("advanced_chassis", car:GetAttribute("AdvancedChassis"))
 add("prompt", seatObj ~= nil and seatObj:FindFirstChild("DrivePrompt") ~= nil)
 add("seat_collides", seatObj ~= nil and seatObj.CanCollide)
 add("maxspeed", car:GetAttribute("MaxSpeed"))
@@ -265,6 +271,8 @@ if driver then
       add("steer_angle_" .. d.Name, d.TargetAngle)
     end
   end
+  add("engine_rpm", car:GetAttribute("EngineRPM"))
+  add("gear", car:GetAttribute("Gear"))
 end
 return table.concat(LOG, "\n")
 '''

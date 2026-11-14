@@ -171,6 +171,7 @@
     o.addTires = $('oTires').checked;
     o.newTires = $('oNewTires').checked;
     o.topSpeed = speedProblem() ? null : numOrNull('oSpeed');
+    o.advancedChassis = $('oAChassis').checked;
     o.vehicle = $('vehWrap').hidden ? null : ($('vehSelect').value || null);
     o.config = $('cfgWrap').hidden ? null : ($('cfgSelect').value || null);
     return o;
@@ -418,7 +419,7 @@
   $('vehSelect').addEventListener('change', () => { refreshBeamngPickers(true); loadSelected(false); });
   $('cfgSelect').addEventListener('change', () => loadSelected(false));
   $('oLod').addEventListener('change', () => { if (S.sources[S.srcIdx] && S.sources[S.srcIdx].kind === 'gta_sa') loadSelected(false); else scheduleRebuild(); });
-  const rebuildIds = ['oName', 'oScale', 'oLength', 'oUnit', 'oFlip', 'oGlass', 'oInterior', 'oLights', 'oMaxTris', 'oTarget', 'oTex', 'oRig', 'oTires', 'oNewTires', 'oSpeed', 'oObj', 'axR', 'axU', 'axF'];
+  const rebuildIds = ['oName', 'oScale', 'oLength', 'oUnit', 'oFlip', 'oGlass', 'oInterior', 'oLights', 'oMaxTris', 'oTarget', 'oTex', 'oRig', 'oTires', 'oNewTires', 'oSpeed', 'oAChassis', 'oObj', 'axR', 'axU', 'axF'];
   for (const id of rebuildIds) $(id).addEventListener(id === 'oName' || id.startsWith('o') && $(id).type === 'number' ? 'input' : 'change', scheduleRebuild);
   for (const el of document.querySelectorAll('input[name=oDrive]')) el.addEventListener('change', scheduleRebuild);
   // the drive options only matter when the car is made drivable
@@ -426,6 +427,8 @@
     const on = $('oRig').checked;
     for (const el of $('driveOpts').querySelectorAll('input')) el.disabled = !on;
     for (const el of $('driveOpts').querySelectorAll(':scope > label')) el.classList.toggle('dim', !on);
+    $('oAChassis').disabled = !on;
+    $('oAChassis').closest('label').classList.toggle('dim', !on);
   }
   $('oRig').addEventListener('change', syncDriveOpts);
   syncDriveOpts();

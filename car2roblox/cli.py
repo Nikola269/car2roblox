@@ -63,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--top-speed", type=float, metavar="KMH",
                    help="top speed of the drivable car in km/h (default about 91)")
     c.add_argument("--drivetrain", choices=["awd", "rwd", "fwd"], default="awd")
+    c.add_argument("--a-chassis", action="store_true", dest="advanced_chassis",
+                   help="real per-wheel suspension (springs) and an RPM/torque-curve drivetrain, "
+                        "in the spirit of the community 'A-Chassis' rigs, instead of the simple "
+                        "fixed-hinge wheels")
 
     i = sub.add_parser("inspect", help="list the parts of a model without converting")
     _add_common(i)
@@ -95,7 +99,8 @@ def _options(a: argparse.Namespace) -> Options:
         formats=fmts or ("glb", "obj"), rig=not getattr(a, "no_rig", False),
         add_tires=not getattr(a, "no_tires", False),
         new_tires=getattr(a, "new_tires", False), top_speed=getattr(a, "top_speed", None),
-        drivetrain=getattr(a, "drivetrain", "awd"), txd=tuple(a.txd), vehicle=a.vehicle,
+        drivetrain=getattr(a, "drivetrain", "awd"),
+        advanced_chassis=getattr(a, "advanced_chassis", False), txd=tuple(a.txd), vehicle=a.vehicle,
         config=a.config)
 
 

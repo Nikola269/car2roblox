@@ -241,6 +241,24 @@ def test_beamng_config_sets_paint(bng_zip):
         import_beamng(str(bng_zip), config="nope", log=quiet)
 
 
+def test_beamng_merges_decal_layer_onto_paint_base(tmp_path):
+    # real-world bug: a body material's Stage 1 decal/stripe was silently dropped because only
+    # Stage 0 (the paint colour) was ever read - the decal must survive as a merged texture.
+    z = tmp_path / "mod.zip"
+    fx.beamng_layered_material_zip(z)
+    m = import_beamng(str(z), log=quiet)
+    mats = {x.name: x for x in m.materials}
+    body = mats["body_mat"]
+    assert body.texture, "the decal layer was dropped - material has no merged texture"
+    assert body.texture in m.textures
+    img = m.textures[body.texture].image
+    px = np.asarray(img.convert("RGBA"))
+    # left half: the decal is opaque there -> shows the decal's own colour, not the paint colour
+    assert tuple(int(c) for c in px[0, 0]) == (200, 40, 40, 255)
+    # right half: the decal is fully transparent there -> the paint colour shows through
+    assert tuple(int(c) for c in px[0, -1])[:3] == (255, 255, 255)   # default colour before --paint
+
+
 def test_beamng_end_to_end_axes(bng_zip, tmp_path):
     res = convert(str(bng_zip), str(tmp_path / "o"), Options(name="Bng"), log=quiet)
     man = res.manifest

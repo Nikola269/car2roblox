@@ -257,6 +257,51 @@ def png_bytes(color=(200, 40, 40, 255), size=8) -> bytes:
     return buf.getvalue()
 
 
+def checker_png_bytes(a=(200, 40, 40, 255), b=(0, 0, 0, 0), size=8) -> bytes:
+    """Left half colour a (opaque), right half colour b - a decal-shaped test texture so a merge
+    can be told apart from either layer alone (half transparent lets the base show through)."""
+    img = Image.new("RGBA", (size, size), a)
+    for x in range(size // 2, size):
+        for y in range(size):
+            img.putpixel((x, y), b)
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def beamng_layered_material_zip(path) -> None:
+    """A body material with TWO Stages: stage 0 is the paint colour (instanceDiffuse, like most
+    BeamNG body paint) and stage 1 is a decal/stripe texture with its own alpha - a common way
+    BeamNG layers decals, dirt or damage on top of the base colour. Only ever reading stage 0
+    silently dropped the decal entirely."""
+    def tr(x, y, z):
+        return f"<translate>{x} {y} {z}</translate>"
+
+    nodes = [
+        dict(name="testcar_body", geom=box((0, 0, 0), (1.8, 4.4, 0.9)), symbol="s1", material="body_mat",
+             xform=tr(0, 0, 0.9)),
+    ]
+    jb = """{
+  "testcar": {
+    "slotType": "main",
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["testcar_body", ["testcar_body"], []],
+    ],
+  },
+}"""
+    materials = {
+        "body_mat": {"name": "body_mat", "class": "Material",
+                     "Stages": [{"instanceDiffuse": True},
+                               {"baseColorMap": "vehicles/testcar/decal.png"}, {}, {}]},
+    }
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("vehicles/testcar/testcar.dae", make_dae(nodes))
+        z.writestr("vehicles/testcar/testcar.jbeam", jb)
+        z.writestr("vehicles/testcar/testcar.materials.json", json.dumps(materials))
+        z.writestr("vehicles/testcar/decal.png", checker_png_bytes())
+
+
 def beamng_test_zip(path, with_config: bool = True) -> None:
     """A tiny 'testcar' mod. BeamNG axes: +X left, +Y back, -Y front, +Z up."""
     def tr(x, y, z):

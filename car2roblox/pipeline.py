@@ -52,6 +52,9 @@ class Options:
     new_tires: bool = False               # always replace the model's wheels with clean generated tires
     top_speed: Optional[float] = None     # km/h for the driving script (None = 90 studs/s, about 91 km/h)
     drivetrain: str = "awd"               # awd | rwd | fwd
+    advanced_chassis: bool = False        # real per-wheel suspension + an RPM/torque-curve drivetrain,
+                                           # in the spirit of the community "A-Chassis" rigs, instead of
+                                           # the simple fixed-hinge wheels
     txd: Tuple[str, ...] = ()
     vehicle: Optional[str] = None         # BeamNG: which vehicle inside a multi-vehicle archive
     config: Optional[str] = None          # BeamNG: .pc configuration name
@@ -684,6 +687,7 @@ def convert(path: str, out_dir: str, opts: Optional[Options] = None, log: Log = 
                        for w, (st, dr) in zip(wheels, flags)],
             "collider": manifest["collider"], "seat": manifest["seat"],
             "passenger_seats": manifest["passenger_seats"],
+            "advanced_chassis": opts.advanced_chassis,
             **({"top_speed": top_speed} if top_speed else {}),
         }, name, glb_name if "glb" in fmts else "the .obj files")
         (root / f"{name}_setup.lua").write_text(rig)

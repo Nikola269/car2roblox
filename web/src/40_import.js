@@ -596,6 +596,64 @@ async function importBeamng(store, srcName, opts, log) {
     texCache.set(ref, key);
     return key;
   }
+  async function openRef(ref) {
+    const low = store.find(ref);
+    if (low === null) { unresolved.add(ref); return null; }
+    try { return await decodeImage(await store.read(low), low); }
+    catch (e) { log(`  ! texture ${baseName(low)} could not be decoded: ${e.message}`); return null; }
+  }
+  function alphaOver(base, layer) {
+    // standard "source over destination" alpha compositing (straight, not premultiplied alpha)
+    const out = { w: base.w, h: base.h, data: new Uint8Array(base.data.length) };
+    const bd = base.data, ld = layer.data, od = out.data;
+    for (let i = 0; i < od.length; i += 4) {
+      const sa = ld[i + 3] / 255, da = bd[i + 3] / 255;
+      const oa = sa + da * (1 - sa);
+      od[i + 3] = Math.round(oa * 255);
+      if (oa <= 0) continue;
+      od[i] = Math.round((ld[i] * sa + bd[i] * da * (1 - sa)) / oa);
+      od[i + 1] = Math.round((ld[i + 1] * sa + bd[i + 1] * da * (1 - sa)) / oa);
+      od[i + 2] = Math.round((ld[i + 2] * sa + bd[i + 2] * da * (1 - sa)) / oa);
+    }
+    return out;
+  }
+  const mergeCache = new Map();
+  async function loadLayeredTex(baseRef, layerRefs, paintColor) {
+    // BeamNG composites a material's 'Stages' into one look - a base paint colour or livery
+    // map with decals, dirt or damage layers painted on top of it using their own alpha. Using
+    // only stage 0 (the old behaviour) silently dropped every layer after it, which is what
+    // made a painted car lose its decals/stripes, or a livery lose its grime.
+    if (!baseRef && !layerRefs.length) return null;
+    const ck = JSON.stringify([baseRef, layerRefs, paintColor]);
+    if (mergeCache.has(ck)) return mergeCache.get(ck);
+    if (!layerRefs.length) {
+      const key = baseRef ? await loadTex(baseRef) : null;
+      mergeCache.set(ck, key);
+      return key;
+    }
+    const baseImg = baseRef ? await openRef(baseRef) : null;
+    const layerImgs = [];
+    for (const r of layerRefs) { const im = await openRef(r); if (im) layerImgs.push(im); }
+    let out = baseImg;
+    if (!out && paintColor && layerImgs.length) {
+      const { w, h } = layerImgs[0];
+      const rgb = paintColor.map((c) => Math.round(Math.max(0, Math.min(1, c)) * 255));
+      out = newImage(w, h, [rgb[0], rgb[1], rgb[2], 255]);
+    }
+    if (!out && !layerImgs.length) { mergeCache.set(ck, null); return null; }
+    let start = 0;
+    if (!out) { out = layerImgs[0]; start = 1; }
+    for (let i = start; i < layerImgs.length; i++) {
+      let limg = layerImgs[i];
+      if (limg.w !== out.w || limg.h !== out.h) limg = resizeArea(limg, out.w, out.h);
+      out = alphaOver(out, limg);
+    }
+    const name = baseName(baseRef || layerRefs[0]);
+    const key = `__merged__/${model.textures.size}/${name}`;
+    model.textures.set(key, makeTexture(name, out));
+    mergeCache.set(ck, key);
+    return key;
+  }
   const matCache = new Map();
   const sceneIds = new Map();
   const sid = (sc) => { if (!sceneIds.has(sc)) sceneIds.set(sc, sceneIds.size); return sceneIds.get(sc); };
@@ -607,17 +665,20 @@ async function importBeamng(store, srcName, opts, log) {
     let color = [1, 1, 1, 1], tex = null, paint = null, transparent = false, double = false;
     if (bm) {
       const stagesRaw = bm.Stages || bm.stages;
-      const stages = Array.isArray(stagesRaw) ? stagesRaw : [];
-      const st0 = stages.length ? stages[0] : {};
-      const ref = stageValue(st0, TEX_KEYS) || stageValue(bm, TEX_KEYS);
+      const stageList = (Array.isArray(stagesRaw) ? stagesRaw : []).filter((s) => s && typeof s === 'object' && !Array.isArray(s));
+      const st0 = stageList.length ? stageList[0] : {};
       let col = null;
       for (const s of [st0, bm]) {
         if (s && typeof s === 'object' && !Array.isArray(s)) col = nonEmptyArr(s.baseColorFactor) || nonEmptyArr(s.diffuseColor) || col;
       }
       if (Array.isArray(col) && col.length >= 3) color = [...col, 1.0].slice(0, 4).map(Number);
-      const instance = stages.some((s) => s && typeof s === 'object' && s.instanceDiffuse) || !!bm.instanceDiffuse;
+      const instance = !!st0.instanceDiffuse || !!bm.instanceDiffuse;
+      const baseRef = instance ? null : (stageValue(st0, TEX_KEYS) || stageValue(bm, TEX_KEYS));
+      // every stage after the base is a layer painted on top of it (decals, dirt, damage) -
+      // merge them all instead of only ever looking at stage 0
+      const layerRefs = stageList.slice(1).map((s) => stageValue(s, TEX_KEYS)).filter(Boolean);
       if (instance) { paint = 'primary'; color = [1, 1, 1, color[3]]; }
-      else if (ref) tex = await loadTex(ref);
+      if (baseRef || layerRefs.length) tex = await loadLayeredTex(baseRef, layerRefs, instance ? color.slice(0, 3) : null);
       transparent = !!bm.translucent;
       double = !!bm.doubleSided;
     } else if (dm) {

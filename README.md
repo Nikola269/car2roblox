@@ -38,8 +38,9 @@ pip install -r requirements.txt        # numpy, Pillow
 **Window:** `python launcher.py` (or double-click `run_gui.pyw` on Windows). Pick a model and the
 window shows it straight away (drag to turn it, wheel to zoom, **Spin**, **Day view**), then press
 **Convert**. **Test drive** drives the converted car around on a grid with the arrow keys / WASD.
-The **Drive** tab holds *Make the car drivable*, drivetrain, top speed, *Add tires* and *Always use new tires*. The window title
-and the corner of the header show the version.
+The **Drive** tab holds *Make the car drivable*, drivetrain, top speed, the *A-Chassis style* suspension
+option, *Add tires* and *Always use new tires*. The window title and the corner of the header show the
+version.
 
 **Command line:**
 
@@ -56,7 +57,8 @@ Useful options: `--scale` (1.0 = real size, 1 m ≈ 3.57 studs) or `--length STU
 `--max-tris` (default 20 000, Roblox's per-mesh limit: bigger meshes are split into several
 MeshParts without losing detail), `--target-tris N` (crude whole-car decimation),
 `--max-texture 1024`, `--drivetrain awd|rwd|fwd`, `--format glb,obj`, `--no-rig` (do not make it
-drivable), `--top-speed KMH`, `--no-tires` (do not generate tyres), `--new-tires` (replace the model's
+drivable), `--top-speed KMH`, `--a-chassis` (real per-wheel suspension + an RPM/torque-curve
+drivetrain, see below), `--no-tires` (do not generate tyres), `--new-tires` (replace the model's
 wheels with clean generated tires at the same positions).
 
 **Windows installer (`Car2RobloxSetup.exe`):** no source project can ship a pre-built Windows binary
@@ -115,6 +117,27 @@ controls; press E at one to sit, same as the driver's.
 If the car drives backwards or steers the wrong way, set `DriveSign` / `SteerSign` to `1`
 (they are attributes on the finished Model). If the model imported facing backwards, re-run
 the converter with `--flip-forward`.
+
+## A-Chassis style suspension & drivetrain
+
+By default each wheel is bolted straight to the chassis on a fixed hinge - simple and robust, but
+with no suspension travel. Tick **A-Chassis style** in the GUI's Drive tab (or pass `--a-chassis` on
+the command line) for a rig closer to the community "A-Chassis" style of car:
+
+* **Suspension:** every wheel gets its own invisible `Upright_<slot>` part, held under the chassis by
+  a `PrismaticConstraint` (vertical travel, `SuspensionTravel` on the Model) and a `SpringConstraint`
+  (the spring itself). Front wheels still steer through a knuckle, now carried by the upright instead
+  of being bolted straight to the chassis, so steering keeps working as the suspension moves.
+* **Drivetrain:** instead of mapping the throttle straight onto wheel speed, the driving `Script` runs
+  a small simulated engine - idle/redline RPM, a torque curve, a 5-speed gearbox that shifts on its
+  own - and reads each drive wheel's real spin to work out what RPM it implies. The wheel motors are
+  driven the way real Roblox vehicle rigs do it: an unreachable target speed, with the actual torque
+  (and so the actual speed) coming from `MotorMaxTorque`, computed every frame from the torque curve.
+  `EngineRPM` and `Gear` attributes appear on the Model so you can watch it shift.
+
+It is still a from-scratch rig built for this converter (not the third-party "A-Chassis" asset
+itself), tuned with the same TUNING table at the top of the setup script. Turn it off again for the
+simpler, lighter fixed-hinge rig if a particular car doesn't need it.
 
 ## Tires
 
@@ -176,7 +199,8 @@ files in, and download a `.zip`. Nothing is uploaded; everything runs in the pag
 
 * a 3D preview with orbit / zoom, shaded / wireframe / pieces views, wheels and a front arrow,
   a **Save picture** button, and the same `preview.png` inside the zip,
-* the same options as the app: *Make drivable*, drivetrain, top speed, *Add tires*, *Always use new tires*, and
+* the same options as the app: *Make drivable*, drivetrain, top speed, *A-Chassis style* suspension,
+  *Add tires*, *Always use new tires*, and
 * **Drive**: a quick test drive of the converted car (W/S gas and brake, A/D steer, Space handbrake,
   R reset; on-screen buttons on phones). It is a simple vehicle model for checking size, wheel
   placement and steering, **not** Roblox physics. The real driving rig is the Studio script.

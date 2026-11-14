@@ -9,7 +9,8 @@ function defaultOptions() {
     source: 'auto', name: null, scale: 1.0, length: null, unit: null, axes: null, flipForward: false,
     paint: null, paint2: null, paint3: null, includeLod: false, includeGlass: true, includeInterior: true,
     includeLights: true, maxTrisPerMesh: ROBLOX_MAX_TRIANGLES, targetTris: null, maxTexture: 1024,
-    formats: ['glb', 'obj'], rig: true, addTires: true, newTires: false, topSpeed: null, drivetrain: 'awd', vehicle: null, config: null,
+    formats: ['glb', 'obj'], rig: true, addTires: true, newTires: false, topSpeed: null, drivetrain: 'awd',
+    advancedChassis: false, vehicle: null, config: null,
   };
 }
 const sanitize = (name, fallback = 'Part') => {
@@ -665,6 +666,7 @@ async function makeOutputs(model, built, opts, log, warnings, light = false) {
       pieces: pieces.map((p) => ({ name: p.name, kind: p.kind, center: pieceBox(p).center.map(r4f), size: pieceBox(p).size.map(r4f), paint: p.material.paint })),
       wheels: wheels.map((w, i) => ({ slot: w.slot, hub: w.hub.map(r4f), radius: r4f(w.radius), width: r4f(w.width), pieces: w.pieces, primary: w.primary, steer: flags[i][0], drive: flags[i][1] })),
       collider: manifest.collider, seat: manifest.seat, passenger_seats: manifest.passenger_seats,
+      advanced_chassis: !!opts.advancedChassis,
       ...(topSpeed ? { top_speed: topSpeed } : {}),
     }, name, fmts.has('glb') ? glbName : 'the .obj files');
     add(`${name}_setup.lua`, lua);

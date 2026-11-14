@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
+from PIL import Image
 
 from . import jbeam
 from .classify import NOT_WHEEL, is_lod_name, slot_from_name, tokens
@@ -479,6 +480,56 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
         tex_cache[ref] = key
         return key
 
+    def _open_ref(ref: str) -> Optional[Image.Image]:
+        low = store.find(ref)
+        if low is None:
+            unresolved.add(ref)
+            return None
+        try:
+            return load_image_bytes(store.read(low))
+        except Exception as exc:        # noqa: BLE001
+            log(f"  ! texture {posixpath.basename(low)} could not be decoded: {exc}")
+            return None
+
+    merge_cache: Dict[Tuple, Optional[str]] = {}
+
+    def load_layered_tex(base_ref: Optional[str], layer_refs: Tuple[str, ...],
+                         paint_color: Optional[Tuple[float, float, float]]) -> Optional[str]:
+        """BeamNG composites a material's 'Stages' into one look - a base paint colour or
+        livery map with decals, dirt or damage layers painted on top of it using their own
+        alpha. Using only stage 0 (the old behaviour) silently dropped every layer after it,
+        which is what made a painted car lose its decals/stripes, or a livery lose its grime."""
+        if not base_ref and not layer_refs:
+            return None
+        ck = (base_ref, layer_refs, paint_color)
+        if ck in merge_cache:
+            return merge_cache[ck]
+        if not layer_refs:
+            # the common case: one texture, nothing to merge - go through the simple cached path
+            key = load_tex(base_ref) if base_ref else None
+            merge_cache[ck] = key
+            return key
+        base_img = _open_ref(base_ref) if base_ref else None
+        layer_imgs = [img for r in layer_refs if (img := _open_ref(r)) is not None]
+        if base_img is None and paint_color is not None and layer_imgs:
+            w, h = layer_imgs[0].size
+            rgb = tuple(int(round(max(0.0, min(1.0, c)) * 255)) for c in paint_color)
+            base_img = Image.new("RGBA", (w, h), rgb + (255,))
+        if base_img is None and not layer_imgs:
+            merge_cache[ck] = None
+            return None
+        out = base_img.convert("RGBA") if base_img is not None else layer_imgs[0].convert("RGBA")
+        start = 1 if base_img is None else 0
+        for limg in layer_imgs[start:]:
+            if limg.size != out.size:
+                limg = limg.resize(out.size, Image.LANCZOS)
+            out = Image.alpha_composite(out, limg.convert("RGBA"))
+        name = posixpath.basename(base_ref or layer_refs[0])
+        key = f"__merged__/{len(model.textures)}/{name}"
+        model.textures[key] = Texture(name, out)
+        merge_cache[ck] = key
+        return key
+
     mat_cache: Dict[Tuple[int, str], int] = {}
 
     def global_material(sc: DaeScene, local: str) -> int:
@@ -494,21 +545,24 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
         double = False
         if bm:
             stages = bm.get("Stages") or bm.get("stages") or []
-            st0 = stages[0] if isinstance(stages, list) and stages else {}
-            ref = _stage_value(st0, _TEX_KEYS) or _stage_value(bm, _TEX_KEYS)
+            stage_list = [s for s in stages if isinstance(s, dict)] if isinstance(stages, list) else []
+            st0 = stage_list[0] if stage_list else {}
             col = None
             for src_ in (st0, bm):
                 if isinstance(src_, dict):
                     col = src_.get("baseColorFactor") or src_.get("diffuseColor") or col
             if isinstance(col, list) and len(col) >= 3:
                 color = tuple(float(c) for c in (list(col) + [1.0])[:4])  # type: ignore
-            instance = any(isinstance(s, dict) and s.get("instanceDiffuse") for s in
-                           (stages if isinstance(stages, list) else [])) or bool(bm.get("instanceDiffuse"))
+            instance = bool(st0.get("instanceDiffuse")) or bool(bm.get("instanceDiffuse"))
+            base_ref = None if instance else (_stage_value(st0, _TEX_KEYS) or _stage_value(bm, _TEX_KEYS))
+            # every stage after the base is a layer painted on top of it (decals, dirt, damage) -
+            # merge them all instead of only ever looking at stage 0
+            layer_refs = tuple(r for s in stage_list[1:] if (r := _stage_value(s, _TEX_KEYS)))
             if instance:
                 paint = "primary"
                 color = (1.0, 1.0, 1.0, color[3])
-            elif ref:
-                tex = load_tex(ref)
+            if base_ref or layer_refs:
+                tex = load_layered_tex(base_ref, layer_refs, color[:3] if instance else None)
             transparent = bool(bm.get("translucent"))
             double = bool(bm.get("doubleSided"))
         elif dm:

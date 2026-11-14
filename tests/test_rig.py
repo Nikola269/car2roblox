@@ -127,3 +127,42 @@ def test_no_size_match_when_sizes_differ(built):
     sizes = {n: [50, 50, 50] for n in names}      # nothing like the manifest
     ok, out = lh.run_rig(script, names, rename={n: f"X{i}" for i, n in enumerate(names)}, sizes=sizes)
     assert not ok and "none of the expected parts" in out
+
+
+def test_simple_chassis_has_no_suspension_parts(built):
+    """The default (advanced_chassis=False) rig keeps its original fixed-hinge wheels."""
+    _, script, names = built
+    ok, out = lh.run_rig(script, names)
+    assert ok, out
+    r = lh.parse_results(out)
+    assert r["uprights"] == "0" and r["suspensions"] == "0" and r["springs"] == "0"
+    assert r["advanced_chassis"] == "false"
+
+
+def test_advanced_chassis_builds_suspension_and_drivetrain(tmp_path):
+    (tmp_path / "t.dff").write_bytes(fx.sa_test_car())
+    (tmp_path / "t.txd").write_bytes(fx.sa_test_txd())
+    res = convert(str(tmp_path / "t.dff"), str(tmp_path / "out"), Options(name="ACar", advanced_chassis=True),
+                  log=quiet)
+    names = [p["name"] for p in res.manifest["pieces"]]
+    script = (res.out_dir / "ACar_setup.lua").read_text()
+    ok, out = lh.run_rig(script, names)
+    assert ok, out
+    r = lh.parse_results(out)
+    n_wheels = len(res.manifest["wheels"])
+    # one suspension upright + one PrismaticConstraint + one SpringConstraint per wheel
+    assert int(r["uprights"]) == n_wheels
+    assert int(r["suspensions"]) == n_wheels
+    assert int(r["springs"]) == n_wheels
+    assert r["advanced_chassis"] == "true"
+    assert int(r["knuckles"]) == 2                 # front axle still steers, same as the simple rig
+    # the rig still builds normally: same seat/weld/selection behaviour as the simple chassis
+    assert r["seats"] == "4" and r["scripts"] == "1" and r["selected"] == "true"
+    # the drivetrain sim has taken over: an "unreachable" target speed in the right direction,
+    # with the real driving force coming from MotorMaxTorque (computed from the torque curve)
+    w = float(r["drive_w_Wheel_FL"])
+    assert abs(w) >= 1000                          # nowhere near a real wheel speed - it's a target only
+    assert w < 0                                   # DriveSign=-1, throttle=1 -> same sign convention as before
+    assert float(r["drive_torque_Wheel_FL"]) > 0
+    assert float(r["engine_rpm"]) >= 900           # at least idle
+    assert r["gear"] == "1"                        # starts in first gear

@@ -132,6 +132,7 @@ def options_from_values(v: Dict[str, object]) -> Tuple[str, str, Options]:
         max_texture=_num(str(v.get("max_texture", "1024")), int, "Texture size", False),
         formats=fmts, rig=bool(v.get("rig", True)), add_tires=bool(v.get("add_tires", True)),
         new_tires=bool(v.get("new_tires", False)), top_speed=top_speed, drivetrain=drivetrain,
+        advanced_chassis=bool(v.get("advanced_chassis", False)),
         txd=tuple(v.get("txd", ()) or ()),                      # type: ignore[arg-type]
         vehicle=str(v.get("vehicle", "") or "").strip() or None,
         config=str(v.get("config", "") or "").strip() or None)
@@ -263,7 +264,7 @@ class ConverterApp:
             "max_texture": s(value="1024"), "drivetrain": s(value="awd"), "top_speed": s(),
             "glb": b(value=True), "obj": b(value=True), "rig": b(value=True), "add_tires": b(value=True), "new_tires": b(value=False),
             "glass": b(value=True), "interior": b(value=True), "lights": b(value=True),
-            "lod": b(value=False), "flip": b(value=False),
+            "lod": b(value=False), "flip": b(value=False), "advanced_chassis": b(value=False),
         }
 
         self._build_style()
@@ -470,24 +471,37 @@ class ConverterApp:
         self.en_speed = ttk.Entry(t, textvariable=self.v["top_speed"], width=8)
         self.en_speed.grid(row=3, column=1, sticky="w", pady=4)
         ttk.Label(t, text="empty = about 91", style="Muted.TLabel").grid(row=3, column=2, sticky="w", padx=8)
-        self._drive_controls = [(self.cb_drivetrain, "readonly"), (self.en_speed, "normal")]
-        ttk.Label(t, text="Tires", style="Head.TLabel").grid(row=4, column=0, columnspan=3, sticky="w",
-                                                              pady=(14, 2))
+        ttk.Label(t, text="Suspension & drivetrain", style="Head.TLabel").grid(
+            row=4, column=0, columnspan=3, sticky="w", pady=(14, 2))
+        self.ck_a_chassis = ttk.Checkbutton(t, text="A-Chassis style: real suspension + RPM/torque drivetrain",
+                                            variable=self.v["advanced_chassis"])
+        self.ck_a_chassis.grid(row=5, column=0, columnspan=3, sticky="w")
+        self._drive_controls = [(self.cb_drivetrain, "readonly"), (self.en_speed, "normal"),
+                                 (self.ck_a_chassis, "normal")]
+        ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
+                  text="Rigs each wheel with its own spring-loaded suspension upright (and a "
+                       "steering knuckle on the front wheels) instead of a fixed hinge, and drives "
+                       "it with a simulated engine - RPM, a torque curve and gears - in the spirit "
+                       "of the community 'A-Chassis' rigs. Leave this off for the simpler, lighter "
+                       "fixed-hinge rig."
+                  ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(2, 10))
+        ttk.Label(t, text="Tires", style="Head.TLabel").grid(row=7, column=0, columnspan=3, sticky="w",
+                                                              pady=(4, 2))
         ttk.Checkbutton(t, text="Add tires if the model has none", variable=self.v["add_tires"]
-                        ).grid(row=5, column=0, columnspan=3, sticky="w")
+                        ).grid(row=8, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(t, text="Always use new tires (keep the wheel positions, replace the look)",
-                        variable=self.v["new_tires"]).grid(row=6, column=0, columnspan=3, sticky="w", pady=(4, 0))
+                        variable=self.v["new_tires"]).grid(row=9, column=0, columnspan=3, sticky="w", pady=(4, 0))
         ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
                   text="Many mods (BeamNG especially) arrive without wheels, with the wheels "
                        "left in the middle of the car, or with only some of them. The converter "
                        "moves, copies or builds the missing wheels. If a mod's own wheels still "
                        "look wrong, tick 'Always use new tires'. Turn 'Add tires' off if the body "
                        "already has its wheels built in."
-                  ).grid(row=7, column=0, columnspan=3, sticky="w", pady=(2, 10))
+                  ).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 10))
         ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
                   text="Use 'Test drive' under the preview to try steering and wheel placement "
                        "before importing. It is a simple preview, not Roblox physics."
-                  ).grid(row=8, column=0, columnspan=3, sticky="w")
+                  ).grid(row=11, column=0, columnspan=3, sticky="w")
 
     def _build_stage(self) -> None:
         P = PALETTE

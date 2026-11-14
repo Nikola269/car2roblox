@@ -287,6 +287,8 @@ details[open] > summary { margin-bottom: 6px; }
           </label>
           <label id="oSpeedWrap">Top speed (km/h)<input type="number" id="oSpeed" min="1" max="1000" step="5" placeholder="default (about 91)" inputmode="numeric" aria-describedby="oSpeedMsg"><span class="hint bad" id="oSpeedMsg" hidden></span></label>
         </div>
+        <label class="inline"><input type="checkbox" id="oAChassis"> A-Chassis style: real suspension + RPM/torque drivetrain</label>
+        <p class="hint">Rigs each wheel with its own spring-loaded suspension upright (and a steering knuckle on the front wheels) instead of a fixed hinge, and drives it with a simulated engine - RPM, a torque curve and gears - in the spirit of the community "A-Chassis" rigs. Leave this off for the simpler, lighter fixed-hinge rig.</p>
         <label class="inline"><input type="checkbox" id="oObj" checked> Also write .obj pieces</label>
       </div>
     </section>

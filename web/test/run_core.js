@@ -138,6 +138,8 @@ const refManifest = (n) => JSON.parse(fs.readFileSync(path.join(FX, 'ref', n, 'm
     ['bflex_var', 'bflex_var', { name: 'bflex_var' }, 'mod.zip'], ['bflex_anon', 'bflex_anon', { name: 'bflex_anon' }, 'mod.zip'],
     ['bflex_frontonly', 'bflex_frontonly', { name: 'bflex_frontonly' }, 'mod.zip'],
     ['bflex_caliper', 'bflex_caliper', { name: 'bflex_caliper' }, 'mod.zip'],
+    ['bflex_decal', 'bflex_decal', { name: 'bflex_decal' }, 'mod.zip'],
+    ['sa_achassis', 'sa', { name: 'sa_achassis', advancedChassis: true }],
   ]) {
     await t(`${label}: manifest matches python`, async () => {
       const r = await convertDir(path.join(FX, dir), opts, zip);
@@ -159,7 +161,8 @@ const refManifest = (n) => JSON.parse(fs.readFileSync(path.join(FX, 'ref', n, 'm
     assert.ok(!/__[A-Z]+__/.test(r.out.lua), 'placeholder left');
     assert.ok(r.out.lua.includes('HingeConstraint') && r.out.lua.includes('sa'));
   });
-  for (const [label, dir, opts] of [['sa', 'sa', { name: 'sa' }], ['sa_speed', 'sa', { name: 'sa_speed', topSpeed: 120 }], ['wobj_none', 'wobj_none', { name: 'wobj_none' }]]) {
+  for (const [label, dir, opts] of [['sa', 'sa', { name: 'sa' }], ['sa_speed', 'sa', { name: 'sa_speed', topSpeed: 120 }],
+    ['sa_achassis', 'sa', { name: 'sa_achassis', advancedChassis: true }], ['wobj_none', 'wobj_none', { name: 'wobj_none' }]]) {
   await t(`lua script equals the python one (numbers normalised): ${label}`, async () => {
     const py = fs.readFileSync(path.join(FX, 'ref', label, `${label}_setup.lua`), 'utf8');
     const r = await convertDir(path.join(FX, dir), opts);

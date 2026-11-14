@@ -44,18 +44,106 @@ for _, c in ipairs(car:GetDescendants()) do
 	end
 end
 
-RunService.Heartbeat:Connect(function()
+-- The A-Chassis style drivetrain: a small simulated engine with a torque curve and a gearbox,
+-- instead of just mapping the throttle straight onto wheel speed. It uses the trick real Roblox
+-- vehicle rigs use: the motor's target AngularVelocity is set far beyond anything the car can
+-- reach, so the wheel's *actual* speed is decided entirely by how much MotorMaxTorque the
+-- "engine" can deliver at the current RPM - the same way a real drivetrain behaves (it labours
+-- in a low gear up a hill rather than snapping straight to a fixed speed).
+local GEAR_RATIOS = { 3.60, 2.19, 1.41, 1.00, 0.78 }
+local FINAL_DRIVE = 3.9
+local IDLE_RPM, REDLINE_RPM = 900, 6500
+local SHIFT_UP_RPM, SHIFT_DOWN_RPM = 6000, 2400
+-- torque as a fraction of peak, sampled across the rev range (idle -> redline)
+local TORQUE_CURVE = {
+	{ 0.00, 0.45 }, { 0.15, 0.75 }, { 0.35, 1.00 }, { 0.55, 0.95 }, { 0.75, 0.80 }, { 1.00, 0.55 },
+}
+local gear = 1
+local engineRPM = IDLE_RPM
+
+local function clamp(x, lo, hi)
+	if x < lo then return lo elseif x > hi then return hi else return x end
+end
+
+local function torqueFactor(rpm)
+	local frac = clamp((rpm - IDLE_RPM) / (REDLINE_RPM - IDLE_RPM), 0, 1)
+	for i = 1, #TORQUE_CURVE - 1 do
+		local a, b = TORQUE_CURVE[i], TORQUE_CURVE[i + 1]
+		if frac <= b[1] then
+			local t = (frac - a[1]) / math.max(b[1] - a[1], 0.0001)
+			return a[2] + (b[2] - a[2]) * t
+		end
+	end
+	return TORQUE_CURVE[#TORQUE_CURVE][2]
+end
+
+-- the real spin speed of the drive wheels (rad/s about the world-X axle, see rigscript.py) -
+-- used to work out what RPM the engine would be turning at in the current gear
+local function driveWheelSpeed()
+	local total, n = 0, 0
+	for _, h in ipairs(drive) do
+		local part = h.Attachment1 and h.Attachment1.Parent
+		local av = part and part.AssemblyAngularVelocity
+		if av ~= nil then
+			total = total + math.abs(av.X)
+			n = n + 1
+		end
+	end
+	if n == 0 then
+		return 0
+	end
+	return total / n
+end
+
+RunService.Heartbeat:Connect(function(dt)
 	-- read the tuning attributes every frame so they can be edited live on the Model
 	local driveSign = car:GetAttribute("DriveSign") or -1
 	local steerSign = car:GetAttribute("SteerSign") or -1
 	local maxSpeed = car:GetAttribute("MaxSpeed") or 90
 	local maxSteer = car:GetAttribute("MaxSteerDegrees") or 30
+	local advanced = car:GetAttribute("AdvancedChassis") == true
 	local throttle = seat.ThrottleFloat
 	local steerInput = seat.SteerFloat
-	for _, h in ipairs(drive) do
-		local r = h:GetAttribute("Radius") or 1
-		h.AngularVelocity = driveSign * throttle * maxSpeed / r
+
+	if advanced then
+		dt = dt or (1 / 60)
+		local ratio = GEAR_RATIOS[gear] * FINAL_DRIVE
+		local wheelRPM = driveWheelSpeed() * 60 / (2 * math.pi) * ratio
+		local targetRPM = math.max(IDLE_RPM, wheelRPM)
+		-- smooth the reading into something that behaves like a real tachometer needle instead
+		-- of snapping to a new value every frame
+		engineRPM = engineRPM + (targetRPM - engineRPM) * clamp(dt * 6, 0, 1)
+		if math.abs(throttle) < 0.02 then
+			engineRPM = engineRPM + (IDLE_RPM - engineRPM) * clamp(dt * 2, 0, 1)
+		end
+		engineRPM = clamp(engineRPM, IDLE_RPM * 0.9, REDLINE_RPM * 1.05)
+
+		if math.abs(throttle) > 0.05 then
+			if engineRPM >= SHIFT_UP_RPM and gear < #GEAR_RATIOS then
+				gear = gear + 1
+			elseif engineRPM <= SHIFT_DOWN_RPM and gear > 1 then
+				gear = gear - 1
+			end
+		end
+
+		local peakTorque = car:GetAttribute("PeakTorque") or 2000
+		local wheelTorque = peakTorque * torqueFactor(engineRPM) * ratio * math.abs(throttle)
+		local dir = driveSign * ((throttle < 0) and -1 or 1)
+		for _, h in ipairs(drive) do
+			-- an unreachable target speed in the right direction: the wheel is really driven by
+			-- MotorMaxTorque below, not by this number
+			h.AngularVelocity = dir * 9999
+			h.MotorMaxTorque = wheelTorque / math.max(1, #drive)
+		end
+		car:SetAttribute("EngineRPM", math.floor(engineRPM + 0.5))
+		car:SetAttribute("Gear", gear)
+	else
+		for _, h in ipairs(drive) do
+			local r = h:GetAttribute("Radius") or 1
+			h.AngularVelocity = driveSign * throttle * maxSpeed / r
+		end
 	end
+
 	for _, s in ipairs(steer) do
 		s.TargetAngle = steerSign * steerInput * maxSteer
 	end
@@ -85,6 +173,7 @@ local TUNING = {
 	MaxSteerDegrees = 30,
 	Acceleration = 35,       -- studs/s^2 used to size the motor torque
 	SpawnHeight = 2,         -- the car is dropped from this height (studs) above where it was exported
+	SuspensionTravel = 0.6,  -- studs of wheel travel each way, only used by the A-Chassis-style rig
 }
 
 local Selection = game:GetService("Selection")
@@ -329,6 +418,10 @@ if driveCount == 0 then
 	driveCount = 1
 end
 local torque = math.max(2000, box.AssemblyMass * TUNING.Acceleration * 1.5)
+-- only used when DATA.advanced_chassis is true: a per-wheel share of the car's weight to spring
+-- against, stiff enough to hold the car up at rest with some travel left for bumps
+local susStiffness = math.max(4000, box.AssemblyMass * 30)
+local susDamping = math.max(150, box.AssemblyMass * 1.5)
 
 for _, w in ipairs(DATA.wheels) do
 	local visible = {}
@@ -358,7 +451,48 @@ for _, w in ipairs(DATA.wheels) do
 
 		local hub = Vector3.new(w.hub[1], w.hub[2] + TUNING.SpawnHeight, w.hub[3])
 		local axle = CFrame.new(hub)                       -- the hinge axis is the world X axis (axle direction)
+		local vertical = axle * CFrame.Angles(0, 0, math.rad(90)) -- hinge/slide axis = world Y
 		local holder = box
+
+		if DATA.advanced_chassis then
+			-- a real suspension upright: it hangs off the chassis on a spring instead of being
+			-- bolted straight to it, so the wheel can travel up and down over bumps. Everything
+			-- that used to attach straight to the chassis (the steering knuckle, or the wheel
+			-- itself if this wheel doesn't steer) now attaches to this upright instead.
+			local upright = Instance.new("Part")
+			upright.Name = "Upright_" .. w.slot
+			upright.Size = Vector3.new(0.6, 0.6, 0.6)
+			upright.Transparency = 1
+			upright.CanCollide = false
+			upright.Anchored = true
+			upright.CFrame = axle
+			upright.CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0, 1, 1)
+			upright.Parent = car
+
+			local mountCF = CFrame.new(hub.X, hub.Y + TUNING.SuspensionTravel, hub.Z) * CFrame.Angles(0, 0, math.rad(90))
+			local susTop = attach(box, mountCF)
+			local susBottom = attach(upright, vertical)
+
+			local slide = Instance.new("PrismaticConstraint")
+			slide.Name = "Suspension_" .. w.slot
+			slide.Attachment0 = susTop
+			slide.Attachment1 = susBottom
+			slide.LimitsEnabled = true
+			slide.LowerLimit = -TUNING.SuspensionTravel
+			slide.UpperLimit = TUNING.SuspensionTravel
+			slide.Parent = car
+
+			local spring = Instance.new("SpringConstraint")
+			spring.Name = "Spring_" .. w.slot
+			spring.Attachment0 = susTop
+			spring.Attachment1 = susBottom
+			spring.FreeLength = TUNING.SuspensionTravel
+			spring.Stiffness = susStiffness
+			spring.Damping = susDamping
+			spring.Parent = car
+
+			holder = upright
+		end
 
 		if w.steer then
 			local knuckle = Instance.new("Part")
@@ -371,10 +505,9 @@ for _, w in ipairs(DATA.wheels) do
 			knuckle.CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0, 1, 1)
 			knuckle.Parent = car
 
-			local vertical = axle * CFrame.Angles(0, 0, math.rad(90)) -- hinge axis = world Y
 			local steering = Instance.new("HingeConstraint")
 			steering.Name = "Steer_" .. w.slot
-			steering.Attachment0 = attach(box, vertical)
+			steering.Attachment0 = attach(holder, vertical)
 			steering.Attachment1 = attach(knuckle, vertical)
 			steering.ActuatorType = Enum.ActuatorType.Servo
 			steering.ServoMaxTorque = 1000000
@@ -417,6 +550,8 @@ car:SetAttribute("DriveSign", TUNING.DriveSign)
 car:SetAttribute("SteerSign", TUNING.SteerSign)
 car:SetAttribute("MaxSpeed", TUNING.MaxSpeed)
 car:SetAttribute("MaxSteerDegrees", TUNING.MaxSteerDegrees)
+car:SetAttribute("AdvancedChassis", DATA.advanced_chassis == true)
+car:SetAttribute("PeakTorque", torque)
 
 local driver = Instance.new("Script")
 driver.Name = "CarDriver"
@@ -427,7 +562,8 @@ if source ~= car and source.Parent ~= nil and #source:GetChildren() == 0 then
 	source:Destroy()
 end
 Selection:Set({ car })
-print("car2roblox: built '" .. car.Name .. "' with " .. #DATA.wheels .. " wheel(s) and " .. (#(DATA.passenger_seats or {}) + 1) .. " seat(s). Press Play, walk up to the car and press E at a seat (Drive for the driver's), then W/S = throttle, A/D = steer.")
+local chassisNote = DATA.advanced_chassis and " (A-Chassis style suspension + drivetrain)" or ""
+print("car2roblox: built '" .. car.Name .. "' with " .. #DATA.wheels .. " wheel(s) and " .. (#(DATA.passenger_seats or {}) + 1) .. " seat(s)" .. chassisNote .. ". Press Play, walk up to the car and press E at a seat (Drive for the driver's), then W/S = throttle, A/D = steer.")
 
 --[[ Recolouring: every paintable piece carries the attribute CarPaint ("primary", "secondary", ...).
 for _, d in ipairs(car:GetDescendants()) do
