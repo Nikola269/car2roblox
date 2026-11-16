@@ -145,6 +145,12 @@ Many mods arrive without usable wheels. The converter deals with that in this or
 
 * **BeamNG:** the one wheel mesh a mod ships is placed on every wheel from the JBeam `flexbodies`
   (`pos`, `rot`, `scale`); if the chosen configuration has no wheels installed, a wheel part is added.
+  A wheel/tyre part is often written once in purely local coordinates and placed at the actual front
+  or rear axle only by the *slot* that holds it, via that slot's `nodeOffset` - a production mod's
+  front and rear wheel parts can author numerically identical `pos` values and differ only in which
+  slot they are plugged into. That offset is now read and applied, so such a front and rear wheel no
+  longer collapse onto the same point (which used to drop one of every pair as a "duplicate" and leave
+  the survivor nowhere near its wheel arch).
 * **Fused or unnamed wheels:** one mesh holding all four wheels is split into four; round parts
   that sit on the ground in left/right pairs are recognised as wheels even without "wheel" in the name.
   Arches and liners are never treated as wheels.

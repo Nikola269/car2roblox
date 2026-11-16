@@ -606,6 +606,143 @@ def beamng_front_hints_only_zip(path) -> None:
         z.writestr("vehicles/pickup/pickup.materials.json", json.dumps(materials))
 
 
+def beamng_duplicate_wheel_mesh_zip(path) -> None:
+    """A real-world Blender export pattern: the modder places one wheel rim with Shift+D (a real
+    duplicate, not a linked one) at all four corners. Blender keeps object names unique, so the
+    .dae ends up with the mesh exported as four differently-named nodes - "pickup_wheel",
+    "pickup_wheel.001", "pickup_wheel.002", "pickup_wheel.003" - while the JBeam (which only cares
+    about the one physical mesh) refers to the plain "pickup_wheel" for all four placements.
+    Matching .dae names against the JBeam mesh name exactly finds only the first, unsuffixed
+    instance; the other three are dropped as "not in the archive" - three wheels silently
+    disappear, each corner left with whatever hardware (a caliper, here) shares its JBeam group."""
+    tr = lambda x, y, z: f"<translate>{x} {y} {z}</translate>"
+    corners = [("pickup_wheel", "FR", -0.9, -1.4), ("pickup_wheel.001", "FL", 0.9, -1.4),
+              ("pickup_wheel.002", "RR", -0.9, 1.4), ("pickup_wheel.003", "RL", 0.9, 1.4)]
+    nodes = [dict(name="pickup_body", geom=box((0, 0, 0), (1.8, 4.4, 0.9)), symbol="s1", material="body_mat",
+                 xform=tr(0, 0, 0.9))]
+    for node_name, slot, x, y in corners:
+        nodes.append(dict(name=node_name, geom=cylinder_x((0, 0, 0), 0.35, 0.25), symbol="s3",
+                          material="wheel_mat", xform=tr(x, y, 0.35)))
+        nodes.append(dict(name=f"pickup_caliper_{slot}", geom=box((0, 0, 0), (0.08, 0.12, 0.12)),
+                          symbol="s1", material="body_mat", xform=tr(x * 0.8, y * 1.05 + (0.4 if y < 0 else -0.4), 0.55)))
+    jb = """{
+  "pickup": {
+    "slotType": "main",
+    "nodes": [
+      ["id", "posX", "posY", "posZ"],
+      ["fr1", -0.8, -1.4, 0.35], ["fr2", -1.0, -1.4, 0.35], ["fl1", 0.8, -1.4, 0.35], ["fl2", 1.0, -1.4, 0.35],
+      ["rr1", -0.8, 1.4, 0.35], ["rr2", -1.0, 1.4, 0.35], ["rl1", 0.8, 1.4, 0.35], ["rl2", 1.0, 1.4, 0.35],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_body", ["pickup_body"], []],
+      ["pickup_wheel", ["wheel_FR", "wheelhub_FR"], [], {"pos": {"x": -0.9, "y": -1.4, "z": 0.35}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_wheel", ["wheel_FL", "wheelhub_FL"], [], {"pos": {"x": 0.9, "y": -1.4, "z": 0.35}}],
+      ["pickup_wheel", ["wheel_RR", "wheelhub_RR"], [], {"pos": {"x": -0.9, "y": 1.4, "z": 0.35}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_wheel", ["wheel_RL", "wheelhub_RL"], [], {"pos": {"x": 0.9, "y": 1.4, "z": 0.35}}],
+      ["pickup_caliper_FR", ["wheel_FR", "wheelhub_FR"], [], {"pos": {"x": -0.72, "y": -1.0, "z": 0.75}}],
+      ["pickup_caliper_FL", ["wheel_FL", "wheelhub_FL"], [], {"pos": {"x": 0.72, "y": -1.0, "z": 0.75}}],
+      ["pickup_caliper_RR", ["wheel_RR", "wheelhub_RR"], [], {"pos": {"x": -0.72, "y": 1.86, "z": 0.75}}],
+      ["pickup_caliper_RL", ["wheel_RL", "wheelhub_RL"], [], {"pos": {"x": 0.72, "y": 1.86, "z": 0.75}}],
+    ],
+    "pressureWheels": [
+      ["name", "hubGroup", "group", "node1:", "node2:", "nodeS", "nodeArm", "wheelDir"],
+      {"radius": 0.35, "tireWidth": 0.25},
+      ["FR", "wheelhub_FR", "tire_FR", "fr1", "fr2", 9999, "fr1", 1],
+      ["FL", "wheelhub_FL", "tire_FL", "fl1", "fl2", 9999, "fl1", -1],
+      ["RR", "wheelhub_RR", "tire_RR", "rr1", "rr2", 9999, "rr1", 1],
+      ["RL", "wheelhub_RL", "tire_RL", "rl1", "rl2", 9999, "rl1", -1],
+    ],
+  },
+}"""
+    materials = {
+        "body_mat": {"name": "body_mat", "class": "Material", "Stages": [{"instanceDiffuse": True}, {}, {}, {}]},
+        "wheel_mat": {"name": "wheel_mat", "class": "Material", "Stages": [{"diffuseColor": [0.1, 0.1, 0.1, 1.0]}, {}, {}, {}]},
+    }
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("vehicles/pickup/pickup.dae", make_dae(nodes))
+        z.writestr("vehicles/pickup/pickup.jbeam", jb)
+        z.writestr("vehicles/pickup/pickup.materials.json", json.dumps(materials))
+
+
+def beamng_shared_wheel_slot_offset_zip(path) -> None:
+    """A real-world BeamNG authoring pattern (seen in production mods: a wheel/tyre part meant to
+    serve several track-width presets is written once, entirely in LOCAL coordinates - nodes and
+    flexbody mesh both at x=+-half-track, y=0, z=0 - and is placed on the car only by the *slot*
+    that holds it, via that slot's ``nodeOffset``. The front and rear wheel slots are filled by two
+    different parts of this kind, so a front wheel part and a rear wheel part can (and commonly do)
+    author numerically identical flexbody pos/rot/scale and node positions - only the owning slot's
+    nodeOffset actually tells them apart. Reading a flexbody's listed pos as if it were already the
+    car's own coordinate space - ignoring the slot - makes the front and rear wheel on each side
+    land on exactly the same point: the later one is dropped as "the same placement listed twice"
+    (2 wheels instead of 4), and whichever survives sits near the car's centre, not its wheel
+    arch."""
+    tr = lambda x, y, z: f"<translate>{x} {y} {z}</translate>"
+    nodes = [
+        dict(name="pickup_body", geom=box((0, 0, 0), (1.8, 4.4, 0.9)), symbol="s1", material="body_mat",
+             xform=tr(0, 0, 0.9)),
+        dict(name="pickup_wheel", geom=cylinder_x((0, 0, 0), 0.35, 0.25), symbol="s3", material="wheel_mat"),
+    ]
+    jb = """{
+  "pickup": {
+    "slotType": "main",
+    "slots2": [
+      ["name", "allowTypes", "denyTypes", "default", "description"],
+      ["wheels_F", ["pickup_wheel_F"], [], "pickup_wheel_F_a", "Front wheels", {"nodeOffset":{"y":-1.4, "z":0.35}}],
+      ["wheels_R", ["pickup_wheel_R"], [], "pickup_wheel_R_a", "Rear wheels", {"nodeOffset":{"y":1.4, "z":0.35}}],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_body", ["pickup_body"], []],
+    ],
+  },
+  "pickup_wheel_F_a": {
+    "slotType": "pickup_wheel_F",
+    "nodes": [
+      ["id", "posX", "posY", "posZ"],
+      ["fr1", -0.8, 0, 0], ["fr2", -1.0, 0, 0], ["fl1", 0.8, 0, 0], ["fl2", 1.0, 0, 0],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_wheel", ["wheel_FR", "wheelhub_FR"], [], {"pos": {"x": -0.9, "y": 0, "z": 0}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_wheel", ["wheel_FL", "wheelhub_FL"], [], {"pos": {"x": 0.9, "y": 0, "z": 0}}],
+    ],
+    "pressureWheels": [
+      ["name", "hubGroup", "group", "node1:", "node2:", "nodeS", "nodeArm", "wheelDir"],
+      {"radius": 0.35, "tireWidth": 0.25},
+      ["FR", "wheelhub_FR", "tire_FR", "fr1", "fr2", 9999, "fr1", 1],
+      ["FL", "wheelhub_FL", "tire_FL", "fl1", "fl2", 9999, "fl1", -1],
+    ],
+  },
+  "pickup_wheel_R_a": {
+    "slotType": "pickup_wheel_R",
+    "nodes": [
+      ["id", "posX", "posY", "posZ"],
+      ["rr1", -0.8, 0, 0], ["rr2", -1.0, 0, 0], ["rl1", 0.8, 0, 0], ["rl2", 1.0, 0, 0],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_wheel", ["wheel_RR", "wheelhub_RR"], [], {"pos": {"x": -0.9, "y": 0, "z": 0}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_wheel", ["wheel_RL", "wheelhub_RL"], [], {"pos": {"x": 0.9, "y": 0, "z": 0}}],
+    ],
+    "pressureWheels": [
+      ["name", "hubGroup", "group", "node1:", "node2:", "nodeS", "nodeArm", "wheelDir"],
+      {"radius": 0.35, "tireWidth": 0.25},
+      ["RR", "wheelhub_RR", "tire_RR", "rr1", "rr2", 9999, "rr1", 1],
+      ["RL", "wheelhub_RL", "tire_RL", "rl1", "rl2", 9999, "rl1", -1],
+    ],
+  },
+}"""
+    materials = {
+        "body_mat": {"name": "body_mat", "class": "Material", "Stages": [{"instanceDiffuse": True}, {}, {}, {}]},
+        "wheel_mat": {"name": "wheel_mat", "class": "Material", "Stages": [{"diffuseColor": [0.1, 0.1, 0.1, 1.0]}, {}, {}, {}]},
+    }
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("vehicles/pickup/pickup.dae", make_dae(nodes))
+        z.writestr("vehicles/pickup/pickup.jbeam", jb)
+        z.writestr("vehicles/pickup/pickup.materials.json", json.dumps(materials))
+
+
 def beamng_wheel_group_hardware_zip(path) -> None:
     """A real-world BeamNG authoring pattern: the front brake calipers are placed in the SAME
     JBeam group as the tyre ("wheel_FR"/"wheel_FL") because that is how BeamNG keeps hardware

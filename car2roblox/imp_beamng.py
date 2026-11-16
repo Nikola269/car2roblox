@@ -27,6 +27,24 @@ _SKIP_NODE = re.compile(r"^(col(lision|mesh)?[-_]?\d*|start\d*|base\d*|bounds?|d
                         r"collision.*|colmesh.*|ground.*|shadow.*)$", re.I)
 _TEX_KEYS = ("baseColorMap", "colorMap", "diffuseMap")
 _IMG_EXT = (".dds", ".png", ".jpg", ".jpeg", ".tga", ".bmp")
+# Blender gives every duplicated object a unique name ("Wheel", "Wheel.001", "Wheel.002", ...) even
+# when all of them share one mesh - a modder who Shift+D's a wheel rim around the car ends up with
+# exactly that. Collada exporters also routinely suffix the <geometry> id with "-mesh"/"_mesh". A
+# mod's JBeam always refers to the plain name, so matching .dae node/geometry names against it
+# exactly makes every duplicate past the first one invisible: it is dropped as "not in the archive",
+# and if it was a wheel, that corner is left with only whatever hardware (caliper, hub...) shares its
+# JBeam group - exactly the "fewer wheels than expected, debris at the arch" symptom. Strip the
+# duplicate/export suffix only as a fallback, once an exact match has already failed, so this can
+# only recover a mesh that direct matching would have missed.
+_DUP_SUFFIX = re.compile(r"[._-](?:\d{3,4}|mesh|geom|geometry|shape)$", re.I)
+
+
+def _normalize_mesh_key(s: str) -> str:
+    prev = None
+    while prev != s:
+        prev = s
+        s = _DUP_SUFFIX.sub("", s)
+    return s
 
 
 class Store:
@@ -147,6 +165,45 @@ def _resolve_default_parts(parts: Dict[str, dict]) -> List[str]:
     return chosen
 
 
+_ZERO3 = np.zeros(3, dtype=np.float64)
+
+
+def _slot_offsets(parts_db: Dict[str, dict], active: List[str]) -> Dict[str, np.ndarray]:
+    """A BeamNG slot can carry a ``nodeOffset`` (x/y/z) that every part plugged into it is built
+    at, on top of that part's own node/flexbody coordinates - the standard way a reusable wheel or
+    tyre part (written once, at x~=+-0.5 with y=z=0) is placed at the actual front or rear axle,
+    so the same part can serve several track-width/offset presets. Skipping this, front and rear
+    wheels built from such a part land at the exact same point (both read as y=z=0), which both
+    hides half of them behind the other (dropped as a duplicate placement) and, for the half that
+    does get drawn, puts it nowhere near its wheel arch. Collect, for every slot type an active
+    part fills, that slot's offset - leaving an axis at 0 contribution when it is driven by a
+    formula car2roblox can't evaluate (e.g. a variable track-width), same policy as elsewhere in
+    this module, rather than guessing it."""
+    offsets: Dict[str, np.ndarray] = {}
+    for pn in active:
+        part = parts_db.get(pn, {})
+        for key in ("slots", "slots2"):
+            for row in _table(part.get(key)):
+                off = row["_mods"].get("nodeOffset")
+                if not isinstance(off, dict):
+                    continue
+                vals = [_num(off.get(k)) for k in "xyz"]
+                if not any(v is not None for v in vals):
+                    continue
+                vec = np.array([v or 0.0 for v in vals], dtype=np.float64)
+                # "slots" rows are keyed (type, default, description) - "type" IS the slotType of
+                # whatever part fills it. "slots2" rows are keyed (name, allowTypes, denyTypes,
+                # default, description) - the slot's own "name" is an arbitrary label, not a
+                # slotType, so the offset is registered under every slotType the slot will accept.
+                t = row.get("type")
+                if isinstance(t, str):
+                    offsets[t] = vec
+                for t in row.get("allowTypes") or []:
+                    if isinstance(t, str):
+                        offsets[t] = vec
+    return offsets
+
+
 def _is_wheel_group(g: str) -> bool:
     tk = tokens(g)
     if not tk or set(tk) & NOT_WHEEL:
@@ -155,8 +212,10 @@ def _is_wheel_group(g: str) -> bool:
                                                   "hubcap", "hubcaps"}
 
 
-def _flexbody_rows(part: dict) -> List[dict]:
-    """[{mesh, groups, pos, rot, scale}] for every mesh the part shows."""
+def _flexbody_rows(part: dict, offset: np.ndarray = _ZERO3) -> List[dict]:
+    """[{mesh, groups, pos, rot, scale}] for every mesh the part shows. ``offset`` is the owning
+    slot's ``nodeOffset`` (see ``_slot_offsets``), added to the authored ``pos`` - the part's own
+    coordinates stay local/reusable, the slot is what says where on the car it actually sits."""
     out = []
     for r in _table(part.get("flexbodies")):
         mesh = r.get("mesh")
@@ -178,9 +237,9 @@ def _flexbody_rows(part: dict) -> List[dict]:
         # a value made of variables ("$=$trackwidth/2", used for e.g. a mirrored left/right offset)
         # cannot be read, and falling back to its default can place or orient a part somewhere badly
         # wrong; "not given at all" is different (and fine) - it means no override, i.e. identity
-        out.append({"mesh": mesh, "groups": groups, "pos": _vec3(pos, (0, 0, 0)),
+        out.append({"mesh": mesh, "groups": groups, "pos": _vec3(pos, (0, 0, 0)) + offset,
                     "rot": _vec3(rot, (0, 0, 0)), "scale": _vec3(scale, (1, 1, 1)),
-                    "has_pos": bool(_known(pos) if pos is not None else False),
+                    "has_pos": bool(_known(pos) if pos is not None else False) or bool(offset.any()),
                     "pos_bad": pos is not None and not _known(pos),
                     "rot_bad": rot is not None and not _known(rot),
                     "scale_bad": scale is not None and not _known(scale)})
@@ -230,13 +289,17 @@ def _with_wheel_parts(parts_db: Dict[str, dict], active: List[str]) -> Tuple[Lis
     return active + added, added
 
 
-def _wheel_hints(parts_db: Dict[str, dict], active: List[str]) -> List[WheelHint]:
+def _wheel_hints(parts_db: Dict[str, dict], active: List[str],
+                 slot_offsets: Optional[Dict[str, np.ndarray]] = None) -> List[WheelHint]:
+    slot_offsets = slot_offsets or {}
     nodes: Dict[str, Tuple[float, float, float]] = {}
     for pn in active:
+        st = parts_db.get(pn, {}).get("slotType")
+        off = slot_offsets.get(st, _ZERO3) if isinstance(st, str) else _ZERO3
         for r in _table(parts_db.get(pn, {}).get("nodes")):
             xyz = [_num(r.get(k)) for k in ("posX", "posY", "posZ")]
             if None not in xyz and r.get("id") is not None:
-                nodes[str(r["id"])] = (xyz[0], xyz[1], xyz[2])           # type: ignore[assignment]
+                nodes[str(r["id"])] = (xyz[0] + off[0], xyz[1] + off[1], xyz[2] + off[2])  # type: ignore[assignment]
     hints: List[WheelHint] = []
     for pn in active:
         for sec in ("pressureWheels", "hubWheels", "wheels"):
@@ -369,16 +432,27 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
         if extra_parts:
             log(f"  the default configuration has no wheels installed; added: {', '.join(extra_parts)}")
 
+    # a slot's nodeOffset (see _slot_offsets) must be known before any node/flexbody position in
+    # the part it holds is read, so it is resolved from the final active-part list up front
+    slot_offsets = _slot_offsets(parts_db, active_parts or [])
+
+    def _part_offset(pn: str) -> np.ndarray:
+        st = parts_db.get(pn, {}).get("slotType")
+        return slot_offsets.get(st, _ZERO3) if isinstance(st, str) else _ZERO3
+
     # every mesh a part shows, with its placement: one wheel mesh is listed once per wheel
     rows_by_mesh: Dict[str, List[dict]] = defaultdict(list)
     for pn in active_parts or []:
-        for r in _flexbody_rows(parts_db.get(pn, {})):
+        for r in _flexbody_rows(parts_db.get(pn, {}), _part_offset(pn)):
             rows_by_mesh[r["mesh"].lower()].append(r)
     wanted: Optional[Set[str]] = None
+    wanted_norm: Dict[str, str] = {}
     if rows_by_mesh:
         wanted = set(rows_by_mesh)
+        for w in wanted:
+            wanted_norm.setdefault(_normalize_mesh_key(w), w)
     if active_parts:
-        model.wheel_hints = _wheel_hints(parts_db, active_parts)
+        model.wheel_hints = _wheel_hints(parts_db, active_parts, slot_offsets)
         if model.wheel_hints:
             log(f"  JBeam lists {len(model.wheel_hints)} wheels")
 
@@ -404,10 +478,23 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
     def keep(inst) -> bool:
         node, geom = inst.node_name, inst.geometry_name
         if wanted is not None:
-            hit = node.lower() in wanted or geom.lower() in wanted
-            if hit:
-                found_names.update({node.lower(), geom.lower()} & wanted)
-            return hit
+            nl, gl = node.lower(), geom.lower()
+            hit_keys = {nl, gl} & wanted
+            if not hit_keys:
+                # a duplicated Blender object ("Wheel.001", from Shift+D'ing a wheel rim around the
+                # car) or a geometry id with an exporter-added suffix ("wheel-mesh") won't match the
+                # JBeam's plain mesh name exactly - recover it with that suffix stripped, rather than
+                # silently dropping the mesh (which, for a wheel, looks like a missing wheel with
+                # whatever hardware shares its JBeam group left jammed in the empty arch)
+                for k in (nl, gl):
+                    w = wanted_norm.get(_normalize_mesh_key(k))
+                    if w is not None:
+                        hit_keys = {w}
+                        break
+            if hit_keys:
+                found_names.update(hit_keys)
+                return True
+            return False
         if _SKIP_NODE.match(node) or (not include_lod and is_lod_name(node)):
             return False
         return True
@@ -584,6 +671,10 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
     def hint_for(slot: Optional[str]) -> Optional[WheelHint]:
         return next((h for h in model.wheel_hints if slot and h.slot == slot), None)
 
+    rows_by_mesh_norm: Dict[str, List[dict]] = defaultdict(list)
+    for mesh_key, rows in rows_by_mesh.items():
+        rows_by_mesh_norm[_normalize_mesh_key(mesh_key)].extend(rows)
+
     parts: List[Part] = []
     emitted: Set[tuple] = set()
     dropped_formula: List[str] = []
@@ -594,7 +685,12 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
         if not base.tri_count:
             continue
         node = inst.node_name or inst.geometry_name
-        rows = rows_by_mesh.get(inst.node_name.lower()) or rows_by_mesh.get(inst.geometry_name.lower()) or []
+        nl, gl_name = inst.node_name.lower(), inst.geometry_name.lower()
+        # as in `keep()` above: a duplicated object or a suffixed geometry id can match the JBeam
+        # mesh name only once the duplicate/export suffix is stripped
+        rows = (rows_by_mesh.get(nl) or rows_by_mesh.get(gl_name)
+               or rows_by_mesh_norm.get(_normalize_mesh_key(nl)) or rows_by_mesh_norm.get(_normalize_mesh_key(gl_name))
+               or [])
         node_tokens = set(tokens(node))
         # real mods commonly share one JBeam group (e.g. "wheel_FL") between the tyre/rim AND the
         # brake caliper, rotor, hub carrier etc. that live at that corner, so the group alone can't
@@ -637,8 +733,14 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
                 far = (0.5 if not row["has_pos"] else 1.5) * max(h.radius or 0.3, 0.3)
                 if one_wheel and float(np.linalg.norm(ctr - np.array(h.center))) > far:
                     mesh = mesh.transformed(np.eye(3), np.array(h.center) - ctr)
+            # a wheel part is commonly authored once and placed at every corner with identical
+            # local pos/rot/scale (see _slot_offsets) - the resolved axle/side slot (FL/FR/RL/RR)
+            # is what tells two such corners apart when their raw numbers alone cannot, so it is
+            # part of the key for a wheel; without it, a front and a rear wheel built from the same
+            # reusable part collide here and one of every pair is silently dropped as "the same
+            # placement listed twice", which is what left only 2 of 4 wheels in the output
             key = (node.lower(), tuple(np.round(row["pos"], 4)), tuple(np.round(row["rot"], 3)),
-                   tuple(np.round(row["scale"], 4)), base.tri_count)
+                   tuple(np.round(row["scale"], 4)), base.tri_count, slot if is_wheel else None)
             if key in emitted:                 # the same placement listed twice would z-fight
                 continue
             emitted.add(key)

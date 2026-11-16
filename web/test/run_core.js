@@ -139,6 +139,7 @@ const refManifest = (n) => JSON.parse(fs.readFileSync(path.join(FX, 'ref', n, 'm
     ['bflex_frontonly', 'bflex_frontonly', { name: 'bflex_frontonly' }, 'mod.zip'],
     ['bflex_caliper', 'bflex_caliper', { name: 'bflex_caliper' }, 'mod.zip'],
     ['bflex_decal', 'bflex_decal', { name: 'bflex_decal' }, 'mod.zip'],
+    ['bflex_slotoffset', 'bflex_slotoffset', { name: 'bflex_slotoffset' }, 'mod.zip'],
     ['sa_achassis', 'sa', { name: 'sa_achassis', advancedChassis: true }],
   ]) {
     await t(`${label}: manifest matches python`, async () => {

@@ -256,6 +256,21 @@ function importGtaSa(dffName, dffBytes, txds, includeLod, log) {
 // ===================================================================== BeamNG
 const SKIP_NODE = /^(col(lision|mesh)?[-_]?\d*|start\d*|base\d*|bounds?|detail\d*|collision.*|colmesh.*|ground.*|shadow.*)$/i;
 const TEX_KEYS = ['baseColorMap', 'colorMap', 'diffuseMap'];
+// Blender gives every duplicated object a unique name ("Wheel", "Wheel.001", "Wheel.002", ...) even
+// when all of them share one mesh - a modder who Shift+D's a wheel rim around the car ends up with
+// exactly that. Collada exporters also routinely suffix the <geometry> id with "-mesh"/"_mesh". A
+// mod's JBeam always refers to the plain name, so matching .dae node/geometry names against it
+// exactly makes every duplicate past the first one invisible: it is dropped as "not in the archive",
+// and if it was a wheel, that corner is left with only whatever hardware (caliper, hub...) shares its
+// JBeam group - exactly the "fewer wheels than expected, debris at the arch" symptom. Strip the
+// duplicate/export suffix only as a fallback, once an exact match has already failed, so this can
+// only recover a mesh that direct matching would have missed.
+const DUP_SUFFIX = /[._-](?:\d{3,4}|mesh|geom|geometry|shape)$/i;
+function normalizeMeshKey(s) {
+  let prev = null;
+  while (prev !== s) { prev = s; s = s.replace(DUP_SUFFIX, ''); }
+  return s;
+}
 function beamngVehicleDirs(store) {
   const found = new Map();
   const rx = /^(.*?\/)?vehicles\/([^/]+)\//;
@@ -312,6 +327,45 @@ function resolveDefaultParts(parts) {
   }
   return chosen;
 }
+const ZERO3 = [0, 0, 0];
+// A BeamNG slot can carry a nodeOffset (x/y/z) that every part plugged into it is built at, on top
+// of that part's own node/flexbody coordinates - the standard way a reusable wheel or tyre part
+// (written once, at x~=+-0.5 with y=z=0) is placed at the actual front or rear axle, so the same
+// kind of part can serve several track-width/offset presets. Skipping this, front and rear wheels
+// built from such a part land at the exact same point (both read as y=z=0), which both hides half
+// of them behind the other (dropped as a duplicate placement) and, for the half that does get
+// drawn, puts it nowhere near its wheel arch. Collect, for every slot type an active part fills,
+// that slot's offset - leaving an axis at 0 contribution when it is driven by a formula Car2Roblox
+// can't evaluate (e.g. a variable track-width), same policy as elsewhere in this module, rather
+// than guessing it.
+function slotOffsets(partsDb, active) {
+  const offsets = new Map();
+  for (const pn of active) {
+    const part = partsDb[pn] || {};
+    for (const key of ['slots', 'slots2']) {
+      for (const row of jbTable(part[key])) {
+        const off = row._mods.nodeOffset;
+        if (!isPlainObj(off)) continue;
+        const vals = ['x', 'y', 'z'].map((k) => jbNum(off[k]));
+        if (!vals.some((v) => v !== null)) continue;
+        const vec = vals.map((v) => v || 0);
+        // "slots" rows are keyed (type, default, description) - "type" IS the slotType of
+        // whatever part fills it. "slots2" rows are keyed (name, allowTypes, denyTypes, default,
+        // description) - the slot's own "name" is an arbitrary label, not a slotType, so the
+        // offset is registered under every slotType the slot will accept.
+        if (typeof row.type === 'string') offsets.set(row.type, vec);
+        for (const t of (Array.isArray(row.allowTypes) ? row.allowTypes : [])) {
+          if (typeof t === 'string') offsets.set(t, vec);
+        }
+      }
+    }
+  }
+  return offsets;
+}
+function partOffset(partsDb, offsets, pn) {
+  const st = (partsDb[pn] || {}).slotType;
+  return (typeof st === 'string' && offsets.get(st)) || ZERO3;
+}
 const WHEEL_GROUP_HEAD = new Set(['tire', 'tires', 'tyre', 'tyres', 'rim', 'rims', 'hubcap', 'hubcaps']);
 function isWheelGroup(g) {
   const tk = tokens(g);
@@ -331,8 +385,12 @@ function jbKnown(v) {
   if (Array.isArray(v)) return v.length >= 3 && v.slice(0, 3).every((c) => jbNum(c) !== null);
   return jbNum(v) !== null;
 }
-// [{mesh, groups, pos, rot, scale, hasPos, posBad, rotBad, scaleBad}] for every mesh the part shows
-function flexbodyRows(part) {
+// [{mesh, groups, pos, rot, scale, hasPos, posBad, rotBad, scaleBad}] for every mesh the part
+// shows. `offset` is the owning slot's nodeOffset (see slotOffsets), added to the authored pos -
+// the part's own coordinates stay local/reusable, the slot is what says where on the car it
+// actually sits.
+function flexbodyRows(part, offset) {
+  offset = offset || ZERO3;
   const out = [];
   for (const r of jbTable(part && part.flexbodies)) {
     const mesh = r.mesh;
@@ -344,9 +402,11 @@ function flexbodyRows(part) {
     // a value made of variables ("$=$trackwidth/2", used for e.g. a mirrored left/right offset)
     // cannot be read, and falling back to its default can place or orient a part somewhere badly
     // wrong; "not given at all" is different (and fine) - it means no override, i.e. identity
+    const p = jbVec3(pos, [0, 0, 0]);
     out.push({
-      mesh, groups, pos: jbVec3(pos, [0, 0, 0]), rot: jbVec3(rot, [0, 0, 0]), scale: jbVec3(scale, [1, 1, 1]),
-      hasPos: pos !== undefined && pos !== null && jbKnown(pos),
+      mesh, groups, pos: [p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]],
+      rot: jbVec3(rot, [0, 0, 0]), scale: jbVec3(scale, [1, 1, 1]),
+      hasPos: (pos !== undefined && pos !== null && jbKnown(pos)) || offset.some((v) => v !== 0),
       posBad: pos !== undefined && pos !== null && !jbKnown(pos),
       rotBad: rot !== undefined && rot !== null && !jbKnown(rot),
       scaleBad: scale !== undefined && scale !== null && !jbKnown(scale),
@@ -381,12 +441,16 @@ function withWheelParts(partsDb, active) {
   return [active.concat(added), added];
 }
 // where the JBeam says the wheels are: the middle of the two hub nodes, with radius / width from the modifiers
-function jbeamWheelHints(partsDb, active) {
+function jbeamWheelHints(partsDb, active, offsets) {
+  offsets = offsets || new Map();
   const nodes = new Map();
   for (const pn of active) {
+    const off = partOffset(partsDb, offsets, pn);
     for (const r of jbTable((partsDb[pn] || {}).nodes)) {
       const xyz = ['posX', 'posY', 'posZ'].map((k) => jbNum(r[k]));
-      if (!xyz.includes(null) && r.id !== undefined && r.id !== null) nodes.set(String(r.id), xyz);
+      if (!xyz.includes(null) && r.id !== undefined && r.id !== null) {
+        nodes.set(String(r.id), [xyz[0] + off[0], xyz[1] + off[1], xyz[2] + off[2]]);
+      }
     }
   }
   const hints = [];
@@ -505,19 +569,26 @@ async function importBeamng(store, srcName, opts, log) {
     activeParts = withWheels;
     if (extraParts.length) log(`  the default configuration has no wheels installed; added: ${extraParts.join(', ')}`);
   }
+  // a slot's nodeOffset (see slotOffsets) must be known before any node/flexbody position in the
+  // part it holds is read, so it is resolved from the final active-part list up front
+  const offs = slotOffsets(partsDb, activeParts || []);
   // every mesh a part shows, with its placement: one wheel mesh is listed once per wheel
   const rowsByMesh = new Map();
   for (const pn of activeParts || []) {
-    for (const r of flexbodyRows(partsDb[pn] || {})) {
+    for (const r of flexbodyRows(partsDb[pn] || {}, partOffset(partsDb, offs, pn))) {
       const k = r.mesh.toLowerCase();
       if (!rowsByMesh.has(k)) rowsByMesh.set(k, []);
       rowsByMesh.get(k).push(r);
     }
   }
   let wanted = null;
-  if (rowsByMesh.size) wanted = new Set(rowsByMesh.keys());
+  let wantedNorm = new Map();
+  if (rowsByMesh.size) {
+    wanted = new Set(rowsByMesh.keys());
+    for (const w of wanted) { const nk = normalizeMeshKey(w); if (!wantedNorm.has(nk)) wantedNorm.set(nk, w); }
+  }
   if (activeParts && activeParts.length) {
-    model.wheelHints = jbeamWheelHints(partsDb, activeParts);
+    model.wheelHints = jbeamWheelHints(partsDb, activeParts, offs);
     if (model.wheelHints.length) log(`  JBeam lists ${model.wheelHints.length} wheels`);
   }
   if (pcData && Array.isArray(pcData.paints)) {
@@ -538,9 +609,20 @@ async function importBeamng(store, srcName, opts, log) {
   const keep = (inst) => {
     const node = inst.nodeName, geom = inst.geometryName;
     if (wanted) {
-      const hit = wanted.has(node.toLowerCase()) || wanted.has(geom.toLowerCase());
-      if (hit) { for (const n of [node.toLowerCase(), geom.toLowerCase()]) if (wanted.has(n)) foundNames.add(n); }
-      return hit;
+      const nl = node.toLowerCase(), gl = geom.toLowerCase();
+      let hitKeys = [nl, gl].filter((n) => wanted.has(n));
+      if (!hitKeys.length) {
+        // a duplicated Blender object ("Wheel.001") or a suffixed geometry id ("wheel-mesh") won't
+        // match the JBeam's plain mesh name exactly - recover it with that suffix stripped, rather
+        // than silently dropping the mesh (which, for a wheel, looks like a missing wheel with
+        // whatever hardware shares its JBeam group left jammed in the empty arch)
+        for (const k of [nl, gl]) {
+          const w = wantedNorm.get(normalizeMeshKey(k));
+          if (w !== undefined) { hitKeys = [w]; break; }
+        }
+      }
+      if (hitKeys.length) { for (const n of hitKeys) foundNames.add(n); return true; }
+      return false;
     }
     if (SKIP_NODE.test(node) || (!opts.includeLod && isLodName(node))) return false;
     return true;
@@ -693,6 +775,12 @@ async function importBeamng(store, srcName, opts, log) {
     return idx;
   }
   const hintFor = (slot) => (slot ? model.wheelHints.find((h) => h.slot === slot) || null : null);
+  const rowsByMeshNorm = new Map();
+  for (const [meshKey, rws] of rowsByMesh) {
+    const nk = normalizeMeshKey(meshKey);
+    if (!rowsByMeshNorm.has(nk)) rowsByMeshNorm.set(nk, []);
+    rowsByMeshNorm.get(nk).push(...rws);
+  }
   const parts = [], emitted = new Set(), droppedFormula = [];
   const NAME_WHEEL = ['wheel', 'tire', 'tyre', 'rim'];
   const rd = (x, n) => String(Math.round(x * n) / n);
@@ -705,7 +793,11 @@ async function importBeamng(store, srcName, opts, log) {
     const base = new Mesh(m.pos, m.tri, mats, m.nrm, m.uv);
     if (!base.triCount) continue;
     const node = inst.nodeName || inst.geometryName;
-    const rows = [inst.nodeName, inst.geometryName].map((n) => rowsByMesh.get(n.toLowerCase())).find((r) => r && r.length) || [];
+    // as in `keep()` above: a duplicated object or a suffixed geometry id can match the JBeam mesh
+    // name only once the duplicate/export suffix is stripped
+    const rows = [inst.nodeName, inst.geometryName].map((n) => rowsByMesh.get(n.toLowerCase())).find((r) => r && r.length)
+      || [inst.nodeName, inst.geometryName].map((n) => rowsByMeshNorm.get(normalizeMeshKey(n.toLowerCase()))).find((r) => r && r.length)
+      || [];
     const tk = tokens(node);
     // real mods commonly share one JBeam group (e.g. "wheel_FL") between the tyre/rim AND the
     // brake caliper, rotor, hub carrier etc. that live at that corner, so the group alone can't
@@ -747,7 +839,13 @@ async function importBeamng(store, srcName, opts, log) {
           mesh = mesh.transformed(I3(), [h.center[0] - ctr[0], h.center[1] - ctr[1], h.center[2] - ctr[2]]);   // modelled at the origin
         }
       }
-      const key = [node.toLowerCase(), row.pos.map((x) => rd(x, 1e4)).join(','), row.rot.map((x) => rd(x, 1e3)).join(','), row.scale.map((x) => rd(x, 1e4)).join(','), base.triCount].join('|');
+      // a wheel part is commonly authored once and placed at every corner with identical local
+      // pos/rot/scale (see slotOffsets) - the resolved axle/side slot (FL/FR/RL/RR) is what tells
+      // two such corners apart when their raw numbers alone cannot, so it is part of the key for
+      // a wheel; without it, a front and a rear wheel built from the same reusable part collide
+      // here and one of every pair is silently dropped as "the same placement listed twice", which
+      // is what left only 2 of 4 wheels in the output
+      const key = [node.toLowerCase(), row.pos.map((x) => rd(x, 1e4)).join(','), row.rot.map((x) => rd(x, 1e3)).join(','), row.scale.map((x) => rd(x, 1e4)).join(','), base.triCount, isWheel ? slot : null].join('|');
       if (emitted.has(key)) return;            // the same placement listed twice would z-fight
       emitted.add(key);
       parts.push({ name: rows.length === 1 ? node : `${node}_${slot || k + 1}`, mesh, wheelSlot: isWheel ? slot : null,

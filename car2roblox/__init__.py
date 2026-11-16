@@ -1,6 +1,6 @@
 """car2roblox - convert GTA SA / GTA V / BeamNG car models into Roblox Studio assets."""
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 # Roblox's documented per-mesh triangle limit (create.roblox.com, "General specifications").
 ROBLOX_MAX_TRIANGLES = 20000

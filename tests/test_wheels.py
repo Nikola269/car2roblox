@@ -330,3 +330,52 @@ def test_beamng_hardware_sharing_the_wheel_group_stays_body(tmp_path):
         nearest = min(float(np.hypot(c["center"][1] - info["hub"][1], c["center"][2] - info["hub"][2]))
                       for info in w.values())
         assert nearest > 0.3 / 0.28, (c, w)
+
+
+def test_beamng_duplicated_wheel_mesh_keeps_all_four_wheels(tmp_path):
+    # real-world bug (found from an actual BeamNG mod's exported .dae): a modder who Shift+D's one
+    # wheel rim around the car ends up with Blender object names "wheel", "wheel.001", "wheel.002",
+    # "wheel.003" in the export, while the JBeam refers to the plain "wheel" name for all four
+    # placements. Matching .dae names against the JBeam mesh name exactly found only the
+    # unsuffixed instance - three wheels silently vanished, each corner left with only its brake
+    # caliper (which has its own, unsuffixed name) rendered loose in the empty arch.
+    z = tmp_path / "mod.zip"
+    fx.beamng_duplicate_wheel_mesh_zip(z)
+    res = run(tmp_path, z)
+    w = wheel_info(res)
+    assert sorted(w) == ["FL", "FR", "RL", "RR"], res.warnings
+    wheels = [p for p in res.manifest["pieces"] if p["kind"] == "wheel"]
+    assert len(wheels) == 4, [p["name"] for p in res.manifest["pieces"]]
+    # every wheel actually sits at its own corner, not stacked on top of one another
+    centers = {tuple(round(c, 2) for c in p["center"]) for p in wheels}
+    assert len(centers) == 4, wheels
+    # the calipers are still correctly left out as hardware, not swept in as wheels
+    calipers = [p for p in res.manifest["pieces"] if "caliper" in p["name"]]
+    assert len(calipers) == 4, [p["name"] for p in res.manifest["pieces"]]
+    for c in calipers:
+        assert c["kind"] == "body", c
+
+
+def test_beamng_wheel_part_placed_only_by_slot_offset_keeps_all_four(tmp_path):
+    # real-world bug (found from an actual BeamNG mod, a Volkswagen Golf Mk2): the front and rear
+    # wheel parts are each written with their own nodes and flexbody mesh entirely in local
+    # coordinates (y=z=0) and rely on their owning SLOT's nodeOffset to land at the actual front
+    # or rear axle - a standard pattern for a wheel/tyre part meant to serve several track-width
+    # presets. Ignoring the slot and reading the flexbody's listed pos as the car's own coordinate
+    # space made the front and rear wheel on each side collapse onto the exact same point: one of
+    # every pair was dropped as "the same placement listed twice" (2 wheels instead of 4), and the
+    # survivors sat bunched near the car's centre instead of under their wheel arches.
+    z = tmp_path / "mod.zip"
+    fx.beamng_shared_wheel_slot_offset_zip(z)
+    res = run(tmp_path, z)
+    w = wheel_info(res)
+    assert sorted(w) == ["FL", "FR", "RL", "RR"], res.warnings
+    wheels = [p for p in res.manifest["pieces"] if p["kind"] == "wheel"]
+    assert len(wheels) == 4, [p["name"] for p in res.manifest["pieces"]]
+    # front and rear wheels on the same side must not be stacked on top of one another
+    centers = {tuple(round(c, 2) for c in p["center"]) for p in wheels}
+    assert len(centers) == 4, wheels
+    # the slot's nodeOffset actually moved them apart lengthwise (not just deduplicated in place)
+    front_z = {round(w[s]["hub"][2], 2) for s in ("FL", "FR")}
+    rear_z = {round(w[s]["hub"][2], 2) for s in ("RL", "RR")}
+    assert front_z != rear_z, w
