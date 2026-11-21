@@ -743,6 +743,107 @@ def beamng_shared_wheel_slot_offset_zip(path) -> None:
         z.writestr("vehicles/pickup/pickup.materials.json", json.dumps(materials))
 
 
+def beamng_nested_wheel_tire_slot_zip(path) -> None:
+    """A real-world BeamNG authoring pattern (seen in production mods: a Volkswagen Golf Mk2): the
+    wheel RIM part is placed at the axle only through its owning slot's ``nodeOffset`` (same pattern
+    as ``beamng_shared_wheel_slot_offset_zip`` above) - but that wheel part in turn offers its OWN
+    child slot for the TYRE ("Front Tires"/"Rear Tires"), and that child slot carries no
+    ``nodeOffset`` of its own at all. In BeamNG this is normal: a part with no offset on its own
+    slot is simply built wherever its parent already landed. Resolving each slot's offset from its
+    row alone, in isolation, rather than composing it with the offset of the part that OWNS that
+    row, leaves the tyre part thinking it is offset by nothing - so the actual tyre mesh lands at
+    the car's centreline (y=z=0) while its own rim sits correctly at the real axle."""
+    tr = lambda x, y, z: f"<translate>{x} {y} {z}</translate>"
+    nodes = [
+        dict(name="pickup_body", geom=box((0, 0, 0), (1.8, 4.4, 0.9)), symbol="s1", material="body_mat",
+             xform=tr(0, 0, 0.9)),
+        dict(name="pickup_wheel", geom=cylinder_x((0, 0, 0), 0.35, 0.25), symbol="s3", material="wheel_mat"),
+        dict(name="pickup_tire", geom=cylinder_x((0, 0, 0), 0.37, 0.27), symbol="s4", material="wheel_mat"),
+    ]
+    jb = """{
+  "pickup": {
+    "slotType": "main",
+    "slots2": [
+      ["name", "allowTypes", "denyTypes", "default", "description"],
+      ["wheels_F", ["pickup_wheel_F"], [], "pickup_wheel_F_a", "Front wheels", {"nodeOffset":{"y":-1.4, "z":0.35}}],
+      ["wheels_R", ["pickup_wheel_R"], [], "pickup_wheel_R_a", "Rear wheels", {"nodeOffset":{"y":1.4, "z":0.35}}],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_body", ["pickup_body"], []],
+    ],
+  },
+  "pickup_wheel_F_a": {
+    "slotType": "pickup_wheel_F",
+    "slots": [
+      ["type", "default", "description"],
+      ["pickup_tire_F", "pickup_tire_F_a", "Front Tires"],
+    ],
+    "nodes": [
+      ["id", "posX", "posY", "posZ"],
+      ["fr1", -0.8, 0, 0], ["fr2", -1.0, 0, 0], ["fl1", 0.8, 0, 0], ["fl2", 1.0, 0, 0],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_wheel", ["wheel_FR", "wheelhub_FR"], [], {"pos": {"x": -0.9, "y": 0, "z": 0}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_wheel", ["wheel_FL", "wheelhub_FL"], [], {"pos": {"x": 0.9, "y": 0, "z": 0}}],
+    ],
+    "pressureWheels": [
+      ["name", "hubGroup", "group", "node1:", "node2:", "nodeS", "nodeArm", "wheelDir"],
+      {"radius": 0.35, "tireWidth": 0.25},
+      ["FR", "wheelhub_FR", "tire_FR", "fr1", "fr2", 9999, "fr1", 1],
+      ["FL", "wheelhub_FL", "tire_FL", "fl1", "fl2", 9999, "fl1", -1],
+    ],
+  },
+  "pickup_wheel_R_a": {
+    "slotType": "pickup_wheel_R",
+    "slots": [
+      ["type", "default", "description"],
+      ["pickup_tire_R", "pickup_tire_R_a", "Rear Tires"],
+    ],
+    "nodes": [
+      ["id", "posX", "posY", "posZ"],
+      ["rr1", -0.8, 0, 0], ["rr2", -1.0, 0, 0], ["rl1", 0.8, 0, 0], ["rl2", 1.0, 0, 0],
+    ],
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_wheel", ["wheel_RR", "wheelhub_RR"], [], {"pos": {"x": -0.9, "y": 0, "z": 0}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_wheel", ["wheel_RL", "wheelhub_RL"], [], {"pos": {"x": 0.9, "y": 0, "z": 0}}],
+    ],
+    "pressureWheels": [
+      ["name", "hubGroup", "group", "node1:", "node2:", "nodeS", "nodeArm", "wheelDir"],
+      {"radius": 0.35, "tireWidth": 0.25},
+      ["RR", "wheelhub_RR", "tire_RR", "rr1", "rr2", 9999, "rr1", 1],
+      ["RL", "wheelhub_RL", "tire_RL", "rl1", "rl2", 9999, "rl1", -1],
+    ],
+  },
+  "pickup_tire_F_a": {
+    "slotType": "pickup_tire_F",
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_tire", ["wheel_FR", "tire_FR"], [], {"pos": {"x": -0.9, "y": 0, "z": 0}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_tire", ["wheel_FL", "tire_FL"], [], {"pos": {"x": 0.9, "y": 0, "z": 0}}],
+    ],
+  },
+  "pickup_tire_R_a": {
+    "slotType": "pickup_tire_R",
+    "flexbodies": [
+      ["mesh", "[group]:", "nonFlexMaterials"],
+      ["pickup_tire", ["wheel_RR", "tire_RR"], [], {"pos": {"x": -0.9, "y": 0, "z": 0}, "rot": {"x": 0, "y": 0, "z": 180}}],
+      ["pickup_tire", ["wheel_RL", "tire_RL"], [], {"pos": {"x": 0.9, "y": 0, "z": 0}}],
+    ],
+  },
+}"""
+    materials = {
+        "body_mat": {"name": "body_mat", "class": "Material", "Stages": [{"instanceDiffuse": True}, {}, {}, {}]},
+        "wheel_mat": {"name": "wheel_mat", "class": "Material", "Stages": [{"diffuseColor": [0.1, 0.1, 0.1, 1.0]}, {}, {}, {}]},
+    }
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("vehicles/pickup/pickup.dae", make_dae(nodes))
+        z.writestr("vehicles/pickup/pickup.jbeam", jb)
+        z.writestr("vehicles/pickup/pickup.materials.json", json.dumps(materials))
+
+
 def beamng_wheel_group_hardware_zip(path) -> None:
     """A real-world BeamNG authoring pattern: the front brake calipers are placed in the SAME
     JBeam group as the tyre ("wheel_FR"/"wheel_FL") because that is how BeamNG keeps hardware

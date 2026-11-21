@@ -150,7 +150,11 @@ Many mods arrive without usable wheels. The converter deals with that in this or
   front and rear wheel parts can author numerically identical `pos` values and differ only in which
   slot they are plugged into. That offset is now read and applied, so such a front and rear wheel no
   longer collapse onto the same point (which used to drop one of every pair as a "duplicate" and leave
-  the survivor nowhere near its wheel arch).
+  the survivor nowhere near its wheel arch). The offset composes down the slot tree too: a wheel part
+  placed this way commonly offers its own child slot for the tyre with no offset of its own at all
+  (BeamNG just builds it wherever its parent landed), so the tyre now inherits its own rim's resolved
+  position instead of defaulting to no offset and landing on the car's centreline - the stray
+  "debris" that could still appear jammed into the wheel arches after the fix above.
 * **Fused or unnamed wheels:** one mesh holding all four wheels is split into four; round parts
   that sit on the ground in left/right pairs are recognised as wheels even without "wheel" in the name.
   Arches and liners are never treated as wheels.

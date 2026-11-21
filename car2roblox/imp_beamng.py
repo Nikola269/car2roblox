@@ -175,32 +175,52 @@ def _slot_offsets(parts_db: Dict[str, dict], active: List[str]) -> Dict[str, np.
     so the same part can serve several track-width/offset presets. Skipping this, front and rear
     wheels built from such a part land at the exact same point (both read as y=z=0), which both
     hides half of them behind the other (dropped as a duplicate placement) and, for the half that
-    does get drawn, puts it nowhere near its wheel arch. Collect, for every slot type an active
-    part fills, that slot's offset - leaving an axis at 0 contribution when it is driven by a
-    formula car2roblox can't evaluate (e.g. a variable track-width), same policy as elsewhere in
-    this module, rather than guessing it."""
+    does get drawn, puts it nowhere near its wheel arch.
+
+    An offset is not always given directly on the slot that needs it: a wheel part placed at the
+    axle this way commonly offers its own child slot for the tyre (e.g. "Front Tires") with no
+    ``nodeOffset`` of its own at all - BeamNG builds that child wherever its parent already landed,
+    unless the child's slot overrides it. So this resolves offsets by COMPOSING down the slot tree
+    (a part's own offset, found via its slotType, plus whatever its own slots table adds for each
+    child), not by reading each slot row in isolation. Active parts are not necessarily listed
+    parent-before-child, so this re-scans to a fixed point rather than assuming one pass settles
+    every level; a few passes comfortably cover how deep BeamNG slot trees actually nest. Leaves an
+    axis at 0 contribution when it is driven by a formula car2roblox can't evaluate (e.g. a variable
+    track-width), same policy as elsewhere in this module, rather than guessing it."""
     offsets: Dict[str, np.ndarray] = {}
-    for pn in active:
-        part = parts_db.get(pn, {})
-        for key in ("slots", "slots2"):
-            for row in _table(part.get(key)):
-                off = row["_mods"].get("nodeOffset")
-                if not isinstance(off, dict):
-                    continue
-                vals = [_num(off.get(k)) for k in "xyz"]
-                if not any(v is not None for v in vals):
-                    continue
-                vec = np.array([v or 0.0 for v in vals], dtype=np.float64)
-                # "slots" rows are keyed (type, default, description) - "type" IS the slotType of
-                # whatever part fills it. "slots2" rows are keyed (name, allowTypes, denyTypes,
-                # default, description) - the slot's own "name" is an arbitrary label, not a
-                # slotType, so the offset is registered under every slotType the slot will accept.
-                t = row.get("type")
-                if isinstance(t, str):
-                    offsets[t] = vec
-                for t in row.get("allowTypes") or []:
+    for _ in range(6):  # a handful of passes is plenty for how deep these slot trees actually go
+        changed = False
+        for pn in active:
+            part = parts_db.get(pn, {})
+            st = part.get("slotType")
+            base = offsets.get(st, _ZERO3) if isinstance(st, str) else _ZERO3
+            for key in ("slots", "slots2"):
+                for row in _table(part.get(key)):
+                    vec = _ZERO3
+                    off = row["_mods"].get("nodeOffset")
+                    if isinstance(off, dict):
+                        vals = [_num(off.get(k)) for k in "xyz"]
+                        if any(v is not None for v in vals):
+                            vec = np.array([v or 0.0 for v in vals], dtype=np.float64)
+                    total = base + vec
+                    # "slots" rows are keyed (type, default, description) - "type" IS the slotType
+                    # of whatever part fills it. "slots2" rows are keyed (name, allowTypes,
+                    # denyTypes, default, description) - the slot's own "name" is an arbitrary
+                    # label, not a slotType, so the offset is registered under every slotType the
+                    # slot will accept.
+                    targets = []
+                    t = row.get("type")
                     if isinstance(t, str):
-                        offsets[t] = vec
+                        targets.append(t)
+                    for t in row.get("allowTypes") or []:
+                        if isinstance(t, str):
+                            targets.append(t)
+                    for t in targets:
+                        if t not in offsets or not np.array_equal(offsets[t], total):
+                            offsets[t] = total
+                            changed = True
+        if not changed:
+            break
     return offsets
 
 

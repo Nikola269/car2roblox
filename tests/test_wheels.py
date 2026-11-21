@@ -379,3 +379,31 @@ def test_beamng_wheel_part_placed_only_by_slot_offset_keeps_all_four(tmp_path):
     front_z = {round(w[s]["hub"][2], 2) for s in ("FL", "FR")}
     rear_z = {round(w[s]["hub"][2], 2) for s in ("RL", "RR")}
     assert front_z != rear_z, w
+
+
+def test_beamng_tire_in_wheels_own_child_slot_inherits_its_offset(tmp_path):
+    # real-world bug (found from the actual Volkswagen Golf Mk2 mod, after the fix above): the
+    # wheel RIM part is placed at the axle purely by its owning slot's nodeOffset (as above), but
+    # that wheel part then offers its OWN child slot for the TYRE ("Front Tires"/"Rear Tires"),
+    # and that child slot has no nodeOffset of its own - in BeamNG a part with no offset on its own
+    # slot is simply built wherever its parent already landed. Reading each slot's offset from its
+    # own row alone, rather than composing it with the offset of the part that owns that row, left
+    # the tyre thinking it had no offset at all: the rim ended up correctly at the axle while its
+    # own tyre mesh sat uselessly at the car's centreline (y=z=0), the "debris" seen jammed into
+    # the wheel arches.
+    z = tmp_path / "mod.zip"
+    fx.beamng_nested_wheel_tire_slot_zip(z)
+    res = run(tmp_path, z)
+    w = wheel_info(res)
+    assert sorted(w) == ["FL", "FR", "RL", "RR"], res.warnings
+    by_name = {p["name"]: p for p in res.manifest["pieces"]}
+    for slot, info in w.items():
+        tire = by_name[f"pickup_tire_{slot}"]
+        wheel = by_name[f"pickup_wheel_{slot}"]
+        # the tyre must sit at the same axle as its own rim, not at the car's centreline
+        assert tire["center"] == pytest.approx(wheel["center"], abs=1e-4), (slot, tire, wheel)
+        assert tire["center"][2] == pytest.approx(info["hub"][2], abs=1e-4), (slot, tire, info)
+    front_z = {round(w[s]["hub"][2], 2) for s in ("FL", "FR")}
+    rear_z = {round(w[s]["hub"][2], 2) for s in ("RL", "RR")}
+    assert front_z != rear_z, w
+    assert 0.0 not in front_z | rear_z, w  # neither axle collapsed onto the car's centreline

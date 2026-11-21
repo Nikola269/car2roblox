@@ -334,31 +334,57 @@ const ZERO3 = [0, 0, 0];
 // kind of part can serve several track-width/offset presets. Skipping this, front and rear wheels
 // built from such a part land at the exact same point (both read as y=z=0), which both hides half
 // of them behind the other (dropped as a duplicate placement) and, for the half that does get
-// drawn, puts it nowhere near its wheel arch. Collect, for every slot type an active part fills,
-// that slot's offset - leaving an axis at 0 contribution when it is driven by a formula Car2Roblox
-// can't evaluate (e.g. a variable track-width), same policy as elsewhere in this module, rather
-// than guessing it.
+// drawn, puts it nowhere near its wheel arch.
+//
+// An offset is not always given directly on the slot that needs it: a wheel part placed at the
+// axle this way commonly offers its own child slot for the tyre (e.g. "Front Tires") with no
+// nodeOffset of its own at all - BeamNG builds that child wherever its parent already landed,
+// unless the child's slot overrides it. So this resolves offsets by COMPOSING down the slot tree
+// (a part's own offset, found via its slotType, plus whatever its own slots table adds for each
+// child), not by reading each slot row in isolation. Active parts are not necessarily listed
+// parent-before-child, so this re-scans to a fixed point rather than assuming one pass settles
+// every level; a few passes comfortably cover how deep BeamNG slot trees actually nest. Leaves an
+// axis at 0 contribution when it is driven by a formula Car2Roblox can't evaluate (e.g. a variable
+// track-width), same policy as elsewhere in this module, rather than guessing it.
+function vecEq(a, b) {
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
 function slotOffsets(partsDb, active) {
   const offsets = new Map();
-  for (const pn of active) {
-    const part = partsDb[pn] || {};
-    for (const key of ['slots', 'slots2']) {
-      for (const row of jbTable(part[key])) {
-        const off = row._mods.nodeOffset;
-        if (!isPlainObj(off)) continue;
-        const vals = ['x', 'y', 'z'].map((k) => jbNum(off[k]));
-        if (!vals.some((v) => v !== null)) continue;
-        const vec = vals.map((v) => v || 0);
-        // "slots" rows are keyed (type, default, description) - "type" IS the slotType of
-        // whatever part fills it. "slots2" rows are keyed (name, allowTypes, denyTypes, default,
-        // description) - the slot's own "name" is an arbitrary label, not a slotType, so the
-        // offset is registered under every slotType the slot will accept.
-        if (typeof row.type === 'string') offsets.set(row.type, vec);
-        for (const t of (Array.isArray(row.allowTypes) ? row.allowTypes : [])) {
-          if (typeof t === 'string') offsets.set(t, vec);
+  for (let pass = 0; pass < 6; pass++) {
+    let changed = false;
+    for (const pn of active) {
+      const part = partsDb[pn] || {};
+      const st = part.slotType;
+      const base = (typeof st === 'string' && offsets.get(st)) || ZERO3;
+      for (const key of ['slots', 'slots2']) {
+        for (const row of jbTable(part[key])) {
+          let vec = ZERO3;
+          const off = row._mods.nodeOffset;
+          if (isPlainObj(off)) {
+            const vals = ['x', 'y', 'z'].map((k) => jbNum(off[k]));
+            if (vals.some((v) => v !== null)) vec = vals.map((v) => v || 0);
+          }
+          const total = [base[0] + vec[0], base[1] + vec[1], base[2] + vec[2]];
+          // "slots" rows are keyed (type, default, description) - "type" IS the slotType of
+          // whatever part fills it. "slots2" rows are keyed (name, allowTypes, denyTypes,
+          // default, description) - the slot's own "name" is an arbitrary label, not a slotType,
+          // so the offset is registered under every slotType the slot will accept.
+          const targets = [];
+          if (typeof row.type === 'string') targets.push(row.type);
+          for (const t of (Array.isArray(row.allowTypes) ? row.allowTypes : [])) {
+            if (typeof t === 'string') targets.push(t);
+          }
+          for (const t of targets) {
+            if (!offsets.has(t) || !vecEq(offsets.get(t), total)) {
+              offsets.set(t, total);
+              changed = true;
+            }
+          }
         }
       }
     }
+    if (!changed) break;
   }
   return offsets;
 }

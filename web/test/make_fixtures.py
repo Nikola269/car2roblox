@@ -23,6 +23,7 @@ for k, kw in (("bflex", {}), ("bflex_nomesh", dict(wheel_mesh=False)), ("bflex_e
 (out / "bflex_caliper").mkdir(); fx.beamng_wheel_group_hardware_zip(out / "bflex_caliper" / "mod.zip")
 (out / "bflex_decal").mkdir(); fx.beamng_layered_material_zip(out / "bflex_decal" / "mod.zip")
 (out / "bflex_slotoffset").mkdir(); fx.beamng_shared_wheel_slot_offset_zip(out / "bflex_slotoffset" / "mod.zip")
+(out / "bflex_nestedoffset").mkdir(); fx.beamng_nested_wheel_tire_slot_zip(out / "bflex_nestedoffset" / "mod.zip")
 (out / "sa_nowheel").mkdir(); (out / "sa_nowheel" / "testcar.dff").write_bytes(fx.sa_test_car(wheel=False))
 ref = out / "ref"
 q = lambda s: None
@@ -45,6 +46,7 @@ cases["bflex_frontonly"] = (out / "bflex_frontonly" / "mod.zip", Options())
 cases["bflex_caliper"] = (out / "bflex_caliper" / "mod.zip", Options())
 cases["bflex_decal"] = (out / "bflex_decal" / "mod.zip", Options())
 cases["bflex_slotoffset"] = (out / "bflex_slotoffset" / "mod.zip", Options())
+cases["bflex_nestedoffset"] = (out / "bflex_nestedoffset" / "mod.zip", Options())
 cases["sa_nowheel"] = (out / "sa_nowheel" / "testcar.dff", Options())
 cases["sa_speed"] = (out / "sa" / "testcar.dff", Options(top_speed=120))
 cases["sa_achassis"] = (out / "sa" / "testcar.dff", Options(advanced_chassis=True))
