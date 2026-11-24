@@ -142,6 +142,7 @@ const refManifest = (n) => JSON.parse(fs.readFileSync(path.join(FX, 'ref', n, 'm
     ['bflex_slotoffset', 'bflex_slotoffset', { name: 'bflex_slotoffset' }, 'mod.zip'],
     ['bflex_nestedoffset', 'bflex_nestedoffset', { name: 'bflex_nestedoffset' }, 'mod.zip'],
     ['sa_achassis', 'sa', { name: 'sa_achassis', advancedChassis: true }],
+    ['sa_achassis_real', 'sa', { name: 'sa_achassis_real', achassisReal: true }],
   ]) {
     await t(`${label}: manifest matches python`, async () => {
       const r = await convertDir(path.join(FX, dir), opts, zip);
@@ -164,7 +165,9 @@ const refManifest = (n) => JSON.parse(fs.readFileSync(path.join(FX, 'ref', n, 'm
     assert.ok(r.out.lua.includes('HingeConstraint') && r.out.lua.includes('sa'));
   });
   for (const [label, dir, opts] of [['sa', 'sa', { name: 'sa' }], ['sa_speed', 'sa', { name: 'sa_speed', topSpeed: 120 }],
-    ['sa_achassis', 'sa', { name: 'sa_achassis', advancedChassis: true }], ['wobj_none', 'wobj_none', { name: 'wobj_none' }]]) {
+    ['sa_achassis', 'sa', { name: 'sa_achassis', advancedChassis: true }],
+    ['sa_achassis_real', 'sa', { name: 'sa_achassis_real', achassisReal: true }],
+    ['wobj_none', 'wobj_none', { name: 'wobj_none' }]]) {
   await t(`lua script equals the python one (numbers normalised): ${label}`, async () => {
     const py = fs.readFileSync(path.join(FX, 'ref', label, `${label}_setup.lua`), 'utf8');
     const r = await convertDir(path.join(FX, dir), opts);

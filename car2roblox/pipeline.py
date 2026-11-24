@@ -10,6 +10,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from . import ROBLOX_MAX_TRIANGLES, STUDS_PER_METER, __version__
+from . import achassis
 from .classify import classify_part, slot_from_name
 from .export import TexFile, sanitize, write_glb, write_obj
 from .geometry import auto_fix_winding, decimate_to, split_by_limit
@@ -55,6 +56,9 @@ class Options:
     advanced_chassis: bool = False        # real per-wheel suspension + an RPM/torque-curve drivetrain,
                                            # in the spirit of the community "A-Chassis" rigs, instead of
                                            # the simple fixed-hinge wheels
+    achassis_real: bool = False           # bundle the REAL lisphm/A-Chassis kit (MPL-2.0) instead of
+                                           # car2roblox's own rig; needs exactly one front + one rear
+                                           # axle (overrides advanced_chassis when both are set)
     txd: Tuple[str, ...] = ()
     vehicle: Optional[str] = None         # BeamNG: which vehicle inside a multi-vehicle archive
     config: Optional[str] = None          # BeamNG: .pc configuration name
@@ -677,17 +681,36 @@ def convert(path: str, out_dir: str, opts: Optional[Options] = None, log: Log = 
         if not wheels:
             warnings.append("No wheels were detected, so the rig script builds a body + seat "
                             "only. Wheel parts need 'wheel', 'tire' or 'rim' in their names.")
+        rig_wheels = [{"slot": w.slot, "hub": [round(x, 4) for x in w.hub], "radius": round(w.radius, 4),
+                       "width": round(w.width, 4), "pieces": w.pieces, "primary": w.primary, "steer": st, "drive": dr}
+                      for w, (st, dr) in zip(wheels, flags)]
+        achassis_real = opts.achassis_real and achassis.fits_achassis(rig_wheels)
+        achassis_extra: dict = {}
+        if opts.achassis_real and not achassis_real:
+            warnings.append("Real A-Chassis needs exactly one front axle and one rear axle "
+                            "(a left and right wheel on each); this car's wheel layout doesn't "
+                            "match that, so the simple drivable rig was used instead.")
+        if achassis_real:
+            size_whl = {"width": float(size[0]), "height": float(size[1]), "length": float(size[2])}
+            achassis_extra = {"achassis": {
+                "tune": achassis.build_tune_source(size_whl, rig_wheels, opts.drivetrain),
+                "initialize": achassis.vendor_source("Initialize.luau"),
+                "readme": achassis.vendor_source("README.luau"),
+                "units": achassis.vendor_source("Units.luau"),
+                "drive": achassis.vendor_source("Drive.luau"),
+                "values": [[n, c] for n, c in achassis.VALUES_SPEC],
+            }}
         rig = make_rig_script({
             "name": name, "drivetrain": opts.drivetrain, "body": body_piece.name,
             "pieces": [{"name": p.name, "kind": p.kind, "center": [round(float(x), 4) for x in p.center],
                         "size": [round(float(x), 4) for x in p.size],
                         "paint": p.material.paint} for p in pieces],
-            "wheels": [{"slot": w.slot, "hub": [round(x, 4) for x in w.hub], "radius": round(w.radius, 4),
-                        "width": round(w.width, 4), "pieces": w.pieces, "primary": w.primary, "steer": st, "drive": dr}
-                       for w, (st, dr) in zip(wheels, flags)],
+            "wheels": rig_wheels,
             "collider": manifest["collider"], "seat": manifest["seat"],
             "passenger_seats": manifest["passenger_seats"],
             "advanced_chassis": opts.advanced_chassis,
+            "achassis_real": achassis_real,
+            **achassis_extra,
             **({"top_speed": top_speed} if top_speed else {}),
         }, name, glb_name if "glb" in fmts else "the .obj files")
         (root / f"{name}_setup.lua").write_text(rig)

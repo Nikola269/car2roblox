@@ -326,244 +326,424 @@ local function attach(parent, cf)
 end
 
 ----------------------------------------------------------------------------------------------
--- chassis: an invisible box that carries the weight everything else is welded to. It does not
--- collide, so the body and doors are walk-through and a player can reach any seat directly; the
--- car still sits on the ground and has physical presence through the wheel colliders below.
-local box = Instance.new("Part")
-box.Name = "ChassisCollider"
-box.Size = Vector3.new(DATA.collider.size[1], DATA.collider.size[2], DATA.collider.size[3])
-box.CFrame = CFrame.new(DATA.collider.center[1], DATA.collider.center[2] + TUNING.SpawnHeight, DATA.collider.center[3])
-box.Transparency = 1
-box.Anchored = true
-box.CanCollide = false
-box.CustomPhysicalProperties = PhysicalProperties.new(0.6, 0.3, 0.1, 1, 1)
-box.Parent = car
-
 local wheelPiece = {}
 for _, w in ipairs(DATA.wheels) do
 	for _, n in ipairs(w.pieces) do
 		wheelPiece[n] = true
 	end
 end
-for name, p in pairs(placed) do
-	if not wheelPiece[name] then
-		weld(p, box)
-	end
-end
 
--- driver seat
-local seat = Instance.new("VehicleSeat")
-seat.Name = "VehicleSeat"
-seat.Size = Vector3.new(2, 1, 2)
-seat.CFrame = CFrame.new(DATA.seat[1], DATA.seat[2] + TUNING.SpawnHeight, DATA.seat[3])
-seat.Transparency = 1
-seat.Anchored = true
-seat.Massless = true
-seat.CanCollide = false
-seat.HeadsUpDisplay = false
-seat.Parent = car
-weld(seat, box)
+if DATA.achassis_real then
+	----------------------------------------------------------------------------------------------
+	-- Real A-Chassis (lisphm, MPL-2.0, https://github.com/lisphm/A-Chassis): build the exact
+	-- object tree its own Initialize.luau/Drive.luau expect, embed those scripts verbatim, and
+	-- let them do all of the actual rig-building (suspension, motors, steering) at runtime -
+	-- car2roblox only places the parts and the wiring Initialize.luau reads.
+	local AC = DATA.achassis
 
-local prompt = Instance.new("ProximityPrompt")
-prompt.Name = "DrivePrompt"
-prompt.ActionText = "Drive"
-prompt.ObjectText = DATA.name
-prompt.HoldDuration = 0
-prompt.MaxActivationDistance = 12
-prompt.RequiresLineOfSight = false
-prompt.Parent = seat
+	local driveSeat = Instance.new("VehicleSeat")
+	driveSeat.Name = "DriveSeat"
+	driveSeat.Size = Vector3.new(2, 1, 2)
+	driveSeat.CFrame = CFrame.new(DATA.seat[1], DATA.seat[2] + TUNING.SpawnHeight, DATA.seat[3])
+	driveSeat.Transparency = 1
+	driveSeat.Anchored = true
+	driveSeat.Massless = true
+	driveSeat.CanCollide = true -- real A-Chassis is entered by touch, like any normal Roblox seat
+	driveSeat.HeadsUpDisplay = false -- A-Chassis has its own on-screen dashboard
+	driveSeat.Parent = car
 
--- passenger seats (a rough guess at where they'd be: no controls, just somewhere to sit)
-for i, pos in ipairs(DATA.passenger_seats or {}) do
-	local pseat = Instance.new("VehicleSeat")
-	pseat.Name = "PassengerSeat" .. i
-	pseat.Size = Vector3.new(2, 1, 2)
-	pseat.CFrame = CFrame.new(pos[1], pos[2] + TUNING.SpawnHeight, pos[3])
-	pseat.Transparency = 1
-	pseat.Anchored = true
-	pseat.Massless = true
-	pseat.CanCollide = false
-	pseat.HeadsUpDisplay = false
-	pseat.Parent = car
-	weld(pseat, box)
+	local wheelsFolder = Instance.new("Folder")
+	wheelsFolder.Name = "Wheels"
+	wheelsFolder.Parent = car
 
-	local pprompt = Instance.new("ProximityPrompt")
-	pprompt.Name = "SitPrompt"
-	pprompt.ActionText = "Sit"
-	pprompt.ObjectText = DATA.name
-	pprompt.HoldDuration = 0
-	pprompt.MaxActivationDistance = 10
-	pprompt.RequiresLineOfSight = false
-	pprompt.Parent = pseat
-end
+	local bodyFolder = Instance.new("Folder")
+	bodyFolder.Name = "Body"
+	bodyFolder.Parent = car
 
--- two parts of the same car must never push against each other
-local function noCollide(a, b)
-	local c = Instance.new("NoCollisionConstraint")
-	c.Part0 = a
-	c.Part1 = b
-	c.Parent = a
-	return c
-end
+	local REAL_SLOTS = { FL = true, FR = true, RL = true, RR = true }
+	for _, w in ipairs(DATA.wheels) do
+		if REAL_SLOTS[w.slot] then
+			-- the physical wheel A-Chassis spins: an invisible cylinder, same trick as the simple
+			-- rig below. The real wheel/tyre meshes ride inside its "Parts" folder, which
+			-- Initialize.luau welds to this part itself once the car starts.
+			local wheelPart = Instance.new("Part")
+			wheelPart.Name = w.slot
+			wheelPart.Shape = Enum.PartType.Cylinder
+			wheelPart.Size = Vector3.new(math.max(w.width * 0.9, 0.5), w.radius * 2, w.radius * 2)
+			wheelPart.Transparency = 1
+			wheelPart.Anchored = true
+			wheelPart.CanCollide = true
+			wheelPart.CustomPhysicalProperties = PhysicalProperties.new(0.7, 2.2, 0, 100, 1)
+			wheelPart.CFrame = CFrame.new(w.hub[1], w.hub[2] + TUNING.SpawnHeight, w.hub[3])
+			wheelPart.Parent = wheelsFolder
 
-----------------------------------------------------------------------------------------------
--- wheels
-local driveCount = 0
-for _, w in ipairs(DATA.wheels) do
-	if w.drive then
-		driveCount = driveCount + 1
-	end
-end
-if driveCount == 0 then
-	driveCount = 1
-end
-local torque = math.max(2000, box.AssemblyMass * TUNING.Acceleration * 1.5)
--- only used when DATA.advanced_chassis is true: a per-wheel share of the car's weight to spring
--- against, stiff enough to hold the car up at rest with some travel left for bumps
-local susStiffness = math.max(4000, box.AssemblyMass * 30)
-local susDamping = math.max(150, box.AssemblyMass * 1.5)
+			local parts = Instance.new("Folder")
+			parts.Name = "Parts"
+			parts.Parent = wheelPart
+			for _, n in ipairs(w.pieces) do
+				local p = placed[n]
+				if p ~= nil then
+					p.Parent = parts
+				end
+			end
 
-for _, w in ipairs(DATA.wheels) do
-	local visible = {}
-	for _, n in ipairs(w.pieces) do
-		if placed[n] ~= nil then
-			table.insert(visible, placed[n])
-		end
-	end
-	if #visible > 0 then
-		-- the physical wheel is an invisible cylinder: perfectly round and cheap to simulate, so an
-		-- odd tyre mesh can never make the car wobble or jump. The real meshes ride on it.
-		local primary = Instance.new("Part")
-		primary.Name = "WheelCollider_" .. w.slot
-		primary.Shape = Enum.PartType.Cylinder
-		primary.Size = Vector3.new(math.max(w.width * 0.9, 0.5), w.radius * 2, w.radius * 2)
-		primary.Transparency = 1
-		primary.Anchored = true
-		primary.CanCollide = true
-		primary.CustomPhysicalProperties = PhysicalProperties.new(0.7, 2.2, 0, 100, 1)
-		primary.CFrame = CFrame.new(w.hub[1], w.hub[2] + TUNING.SpawnHeight, w.hub[3])
-		primary.Parent = car
-		for _, p in ipairs(visible) do
-			weld(p, primary)
-		end
-		noCollide(primary, box)
-		noCollide(primary, seat)
-
-		local hub = Vector3.new(w.hub[1], w.hub[2] + TUNING.SpawnHeight, w.hub[3])
-		local axle = CFrame.new(hub)                       -- the hinge axis is the world X axis (axle direction)
-		local vertical = axle * CFrame.Angles(0, 0, math.rad(90)) -- hinge/slide axis = world Y
-		local holder = box
-
-		if DATA.advanced_chassis then
-			-- a real suspension upright: it hangs off the chassis on a spring instead of being
-			-- bolted straight to it, so the wheel can travel up and down over bumps. Everything
-			-- that used to attach straight to the chassis (the steering knuckle, or the wheel
-			-- itself if this wheel doesn't steer) now attaches to this upright instead.
-			local upright = Instance.new("Part")
-			upright.Name = "Upright_" .. w.slot
-			upright.Size = Vector3.new(0.6, 0.6, 0.6)
-			upright.Transparency = 1
-			upright.CanCollide = false
-			upright.Anchored = true
-			upright.CFrame = axle
-			upright.CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0, 1, 1)
-			upright.Parent = car
-
-			local mountCF = CFrame.new(hub.X, hub.Y + TUNING.SuspensionTravel, hub.Z) * CFrame.Angles(0, 0, math.rad(90))
-			local susTop = attach(box, mountCF)
-			local susBottom = attach(upright, vertical)
-
-			local slide = Instance.new("PrismaticConstraint")
-			slide.Name = "Suspension_" .. w.slot
-			slide.Attachment0 = susTop
-			slide.Attachment1 = susBottom
-			slide.LimitsEnabled = true
-			slide.LowerLimit = -TUNING.SuspensionTravel
-			slide.UpperLimit = TUNING.SuspensionTravel
-			slide.Parent = car
-
-			local spring = Instance.new("SpringConstraint")
-			spring.Name = "Spring_" .. w.slot
-			spring.Attachment0 = susTop
-			spring.Attachment1 = susBottom
-			spring.FreeLength = TUNING.SuspensionTravel
-			spring.Stiffness = susStiffness
-			spring.Damping = susDamping
-			spring.Parent = car
-
-			holder = upright
-		end
-
-		if w.steer then
-			local knuckle = Instance.new("Part")
-			knuckle.Name = "Knuckle_" .. w.slot
-			knuckle.Size = Vector3.new(1, 1, 1)
-			knuckle.Transparency = 1
-			knuckle.CanCollide = false
-			knuckle.Anchored = true
-			knuckle.CFrame = axle
-			knuckle.CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0, 1, 1)
-			knuckle.Parent = car
-
-			local steering = Instance.new("HingeConstraint")
-			steering.Name = "Steer_" .. w.slot
-			steering.Attachment0 = attach(holder, vertical)
-			steering.Attachment1 = attach(knuckle, vertical)
-			steering.ActuatorType = Enum.ActuatorType.Servo
-			steering.ServoMaxTorque = 1000000
-			steering.AngularSpeed = 6
-			steering.TargetAngle = 0
-			steering:SetAttribute("CarRole", "Steer")
-			steering.Parent = car
-			holder = knuckle
-		end
-
-		local rolling = Instance.new("HingeConstraint")
-		rolling.Name = "Wheel_" .. w.slot
-		rolling.Attachment0 = attach(holder, axle)
-		rolling.Attachment1 = attach(primary, axle)
-		rolling.ActuatorType = Enum.ActuatorType.Motor
-		rolling.AngularVelocity = 0
-		rolling.MotorMaxTorque = w.drive and (torque / driveCount) or 0
-		if w.drive then
-			rolling:SetAttribute("CarRole", "Drive")
-			rolling:SetAttribute("Radius", w.radius)
+			-- Initialize.luau indexes this unconditionally even when nothing needs to go in it.
+			local wheelFixed = Instance.new("Folder")
+			wheelFixed.Name = "WheelFixed"
+			wheelFixed.Parent = wheelPart
 		else
-			rolling:SetAttribute("CarRole", "Free")
+			warn("car2roblox: wheel " .. w.slot .. " does not fit the real A-Chassis's front/rear "
+				.. "left/right layout and was left out of the Wheels folder")
 		end
-		rolling.Parent = car
-	else
-		warn("car2roblox: wheel " .. w.slot .. " was not found, skipping it")
 	end
+
+	for name, p in pairs(placed) do
+		if not wheelPiece[name] then
+			p.Parent = bodyFolder
+		end
+	end
+
+	-- passenger seats (same convention as the simple rig: no controls, CanCollide off so the
+	-- doors stay walk-through, welded in automatically along with the rest of car.Body)
+	for i, pos in ipairs(DATA.passenger_seats or {}) do
+		local pseat = Instance.new("VehicleSeat")
+		pseat.Name = "PassengerSeat" .. i
+		pseat.Size = Vector3.new(2, 1, 2)
+		pseat.CFrame = CFrame.new(pos[1], pos[2] + TUNING.SpawnHeight, pos[3])
+		pseat.Transparency = 1
+		pseat.Anchored = true
+		pseat.Massless = true
+		pseat.CanCollide = false
+		pseat.HeadsUpDisplay = false
+		pseat.Parent = bodyFolder
+
+		local pprompt = Instance.new("ProximityPrompt")
+		pprompt.Name = "SitPrompt"
+		pprompt.ActionText = "Sit"
+		pprompt.ObjectText = DATA.name
+		pprompt.HoldDuration = 0
+		pprompt.MaxActivationDistance = 10
+		pprompt.RequiresLineOfSight = false
+		pprompt.Parent = pseat
+	end
+
+	-- "A-Chassis Tune": the module tree Initialize.luau/Drive.luau require() their way through.
+	local tune = Instance.new("ModuleScript")
+	tune.Name = "A-Chassis Tune"
+	tune.Source = AC.tune
+	tune.Parent = car
+
+	local initScript = Instance.new("Script")
+	initScript.Name = "Initialize"
+	initScript.Source = AC.initialize
+	initScript.Parent = tune
+
+	local readmeModule = Instance.new("ModuleScript")
+	readmeModule.Name = "README"
+	readmeModule.Source = AC.readme
+	readmeModule.Parent = tune
+
+	local unitsModule = Instance.new("ModuleScript")
+	unitsModule.Name = "Units"
+	unitsModule.Source = AC.units
+	unitsModule.Parent = readmeModule
+
+	-- Initialize.luau iterates this, then destroys it - an empty Plugins folder is intentional:
+	-- the optional Gauges/Controls/Sounds/etc. plugins need extra GUI assets this converter can't
+	-- build, so they're left out rather than shipped broken.
+	local plugins = Instance.new("Folder")
+	plugins.Name = "Plugins"
+	plugins.Parent = tune
+
+	local interface = Instance.new("ScreenGui")
+	interface.Name = "A-Chassis Interface"
+	interface.ResetOnSpawn = false
+	interface.Enabled = true
+	interface.Parent = tune
+
+	local carValue = Instance.new("ObjectValue")
+	carValue.Name = "Car"
+	carValue.Parent = interface
+
+	local valuesFolder = Instance.new("Folder")
+	valuesFolder.Name = "Values"
+	valuesFolder.Parent = interface
+	for _, spec in ipairs(AC.values) do
+		local inst = Instance.new(spec[2])
+		inst.Name = spec[1]
+		inst.Parent = valuesFolder
+	end
+
+	-- Drive.luau sets this Frame's .Visible on every input-type change regardless of Tune.Mobile,
+	-- so it must exist as a real GuiObject; Tune.Mobile is turned off (see achassis.py), so none
+	-- of its touch-control children ever get indexed.
+	local mobile = Instance.new("Frame")
+	mobile.Name = "Mobile"
+	mobile.BackgroundTransparency = 1
+	mobile.Visible = false
+	mobile.Parent = interface
+
+	local isOn = Instance.new("BoolValue")
+	isOn.Name = "IsOn"
+	isOn.Parent = interface
+	local starting = Instance.new("BoolValue")
+	starting.Name = "Starting"
+	starting.Parent = isOn
+
+	local controlsOpen = Instance.new("BoolValue")
+	controlsOpen.Name = "ControlsOpen"
+	controlsOpen.Parent = interface
+
+	local driveScript = Instance.new("LocalScript")
+	driveScript.Name = "Drive"
+	driveScript.Source = AC.drive
+	driveScript.Parent = interface
+
+	car.PrimaryPart = driveSeat
+else
+	-- chassis: an invisible box that carries the weight everything else is welded to. It does not
+	-- collide, so the body and doors are walk-through and a player can reach any seat directly; the
+	-- car still sits on the ground and has physical presence through the wheel colliders below.
+	local box = Instance.new("Part")
+	box.Name = "ChassisCollider"
+	box.Size = Vector3.new(DATA.collider.size[1], DATA.collider.size[2], DATA.collider.size[3])
+	box.CFrame = CFrame.new(DATA.collider.center[1], DATA.collider.center[2] + TUNING.SpawnHeight, DATA.collider.center[3])
+	box.Transparency = 1
+	box.Anchored = true
+	box.CanCollide = false
+	box.CustomPhysicalProperties = PhysicalProperties.new(0.6, 0.3, 0.1, 1, 1)
+	box.Parent = car
+
+	for name, p in pairs(placed) do
+		if not wheelPiece[name] then
+			weld(p, box)
+		end
+	end
+
+	-- driver seat
+	local seat = Instance.new("VehicleSeat")
+	seat.Name = "VehicleSeat"
+	seat.Size = Vector3.new(2, 1, 2)
+	seat.CFrame = CFrame.new(DATA.seat[1], DATA.seat[2] + TUNING.SpawnHeight, DATA.seat[3])
+	seat.Transparency = 1
+	seat.Anchored = true
+	seat.Massless = true
+	seat.CanCollide = false
+	seat.HeadsUpDisplay = false
+	seat.Parent = car
+	weld(seat, box)
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "DrivePrompt"
+	prompt.ActionText = "Drive"
+	prompt.ObjectText = DATA.name
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = seat
+
+	-- passenger seats (a rough guess at where they'd be: no controls, just somewhere to sit)
+	for i, pos in ipairs(DATA.passenger_seats or {}) do
+		local pseat = Instance.new("VehicleSeat")
+		pseat.Name = "PassengerSeat" .. i
+		pseat.Size = Vector3.new(2, 1, 2)
+		pseat.CFrame = CFrame.new(pos[1], pos[2] + TUNING.SpawnHeight, pos[3])
+		pseat.Transparency = 1
+		pseat.Anchored = true
+		pseat.Massless = true
+		pseat.CanCollide = false
+		pseat.HeadsUpDisplay = false
+		pseat.Parent = car
+		weld(pseat, box)
+
+		local pprompt = Instance.new("ProximityPrompt")
+		pprompt.Name = "SitPrompt"
+		pprompt.ActionText = "Sit"
+		pprompt.ObjectText = DATA.name
+		pprompt.HoldDuration = 0
+		pprompt.MaxActivationDistance = 10
+		pprompt.RequiresLineOfSight = false
+		pprompt.Parent = pseat
+	end
+
+	-- two parts of the same car must never push against each other
+	local function noCollide(a, b)
+		local c = Instance.new("NoCollisionConstraint")
+		c.Part0 = a
+		c.Part1 = b
+		c.Parent = a
+		return c
+	end
+
+	----------------------------------------------------------------------------------------------
+	-- wheels
+	local driveCount = 0
+	for _, w in ipairs(DATA.wheels) do
+		if w.drive then
+			driveCount = driveCount + 1
+		end
+	end
+	if driveCount == 0 then
+		driveCount = 1
+	end
+	local torque = math.max(2000, box.AssemblyMass * TUNING.Acceleration * 1.5)
+	-- only used when DATA.advanced_chassis is true: a per-wheel share of the car's weight to spring
+	-- against, stiff enough to hold the car up at rest with some travel left for bumps
+	local susStiffness = math.max(4000, box.AssemblyMass * 30)
+	local susDamping = math.max(150, box.AssemblyMass * 1.5)
+
+	for _, w in ipairs(DATA.wheels) do
+		local visible = {}
+		for _, n in ipairs(w.pieces) do
+			if placed[n] ~= nil then
+				table.insert(visible, placed[n])
+			end
+		end
+		if #visible > 0 then
+			-- the physical wheel is an invisible cylinder: perfectly round and cheap to simulate, so an
+			-- odd tyre mesh can never make the car wobble or jump. The real meshes ride on it.
+			local primary = Instance.new("Part")
+			primary.Name = "WheelCollider_" .. w.slot
+			primary.Shape = Enum.PartType.Cylinder
+			primary.Size = Vector3.new(math.max(w.width * 0.9, 0.5), w.radius * 2, w.radius * 2)
+			primary.Transparency = 1
+			primary.Anchored = true
+			primary.CanCollide = true
+			primary.CustomPhysicalProperties = PhysicalProperties.new(0.7, 2.2, 0, 100, 1)
+			primary.CFrame = CFrame.new(w.hub[1], w.hub[2] + TUNING.SpawnHeight, w.hub[3])
+			primary.Parent = car
+			for _, p in ipairs(visible) do
+				weld(p, primary)
+			end
+			noCollide(primary, box)
+			noCollide(primary, seat)
+
+			local hub = Vector3.new(w.hub[1], w.hub[2] + TUNING.SpawnHeight, w.hub[3])
+			local axle = CFrame.new(hub)                       -- the hinge axis is the world X axis (axle direction)
+			local vertical = axle * CFrame.Angles(0, 0, math.rad(90)) -- hinge/slide axis = world Y
+			local holder = box
+
+			if DATA.advanced_chassis then
+				-- a real suspension upright: it hangs off the chassis on a spring instead of being
+				-- bolted straight to it, so the wheel can travel up and down over bumps. Everything
+				-- that used to attach straight to the chassis (the steering knuckle, or the wheel
+				-- itself if this wheel doesn't steer) now attaches to this upright instead.
+				local upright = Instance.new("Part")
+				upright.Name = "Upright_" .. w.slot
+				upright.Size = Vector3.new(0.6, 0.6, 0.6)
+				upright.Transparency = 1
+				upright.CanCollide = false
+				upright.Anchored = true
+				upright.CFrame = axle
+				upright.CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0, 1, 1)
+				upright.Parent = car
+
+				local mountCF = CFrame.new(hub.X, hub.Y + TUNING.SuspensionTravel, hub.Z) * CFrame.Angles(0, 0, math.rad(90))
+				local susTop = attach(box, mountCF)
+				local susBottom = attach(upright, vertical)
+
+				local slide = Instance.new("PrismaticConstraint")
+				slide.Name = "Suspension_" .. w.slot
+				slide.Attachment0 = susTop
+				slide.Attachment1 = susBottom
+				slide.LimitsEnabled = true
+				slide.LowerLimit = -TUNING.SuspensionTravel
+				slide.UpperLimit = TUNING.SuspensionTravel
+				slide.Parent = car
+
+				local spring = Instance.new("SpringConstraint")
+				spring.Name = "Spring_" .. w.slot
+				spring.Attachment0 = susTop
+				spring.Attachment1 = susBottom
+				spring.FreeLength = TUNING.SuspensionTravel
+				spring.Stiffness = susStiffness
+				spring.Damping = susDamping
+				spring.Parent = car
+
+				holder = upright
+			end
+
+			if w.steer then
+				local knuckle = Instance.new("Part")
+				knuckle.Name = "Knuckle_" .. w.slot
+				knuckle.Size = Vector3.new(1, 1, 1)
+				knuckle.Transparency = 1
+				knuckle.CanCollide = false
+				knuckle.Anchored = true
+				knuckle.CFrame = axle
+				knuckle.CustomPhysicalProperties = PhysicalProperties.new(3, 0.3, 0, 1, 1)
+				knuckle.Parent = car
+
+				local steering = Instance.new("HingeConstraint")
+				steering.Name = "Steer_" .. w.slot
+				steering.Attachment0 = attach(holder, vertical)
+				steering.Attachment1 = attach(knuckle, vertical)
+				steering.ActuatorType = Enum.ActuatorType.Servo
+				steering.ServoMaxTorque = 1000000
+				steering.AngularSpeed = 6
+				steering.TargetAngle = 0
+				steering:SetAttribute("CarRole", "Steer")
+				steering.Parent = car
+				holder = knuckle
+			end
+
+			local rolling = Instance.new("HingeConstraint")
+			rolling.Name = "Wheel_" .. w.slot
+			rolling.Attachment0 = attach(holder, axle)
+			rolling.Attachment1 = attach(primary, axle)
+			rolling.ActuatorType = Enum.ActuatorType.Motor
+			rolling.AngularVelocity = 0
+			rolling.MotorMaxTorque = w.drive and (torque / driveCount) or 0
+			if w.drive then
+				rolling:SetAttribute("CarRole", "Drive")
+				rolling:SetAttribute("Radius", w.radius)
+			else
+				rolling:SetAttribute("CarRole", "Free")
+			end
+			rolling.Parent = car
+		else
+			warn("car2roblox: wheel " .. w.slot .. " was not found, skipping it")
+		end
+	end
+
+	car.PrimaryPart = box
+	car:SetAttribute("DriveSign", TUNING.DriveSign)
+	car:SetAttribute("SteerSign", TUNING.SteerSign)
+	car:SetAttribute("MaxSpeed", TUNING.MaxSpeed)
+	car:SetAttribute("MaxSteerDegrees", TUNING.MaxSteerDegrees)
+	car:SetAttribute("AdvancedChassis", DATA.advanced_chassis == true)
+	car:SetAttribute("PeakTorque", torque)
+
+	local driver = Instance.new("Script")
+	driver.Name = "CarDriver"
+	driver.Source = [==[__DRIVER__]==]
+	driver.Parent = car
 end
 
 ----------------------------------------------------------------------------------------------
--- finish: unanchor, driver script, tuning attributes
+-- finish: unanchor everything so the car actually sits under physics once Play is pressed
 for _, d in ipairs(car:GetDescendants()) do
 	if d:IsA("BasePart") then
 		d.Anchored = false
 	end
 end
-car.PrimaryPart = box
-
-car:SetAttribute("DriveSign", TUNING.DriveSign)
-car:SetAttribute("SteerSign", TUNING.SteerSign)
-car:SetAttribute("MaxSpeed", TUNING.MaxSpeed)
-car:SetAttribute("MaxSteerDegrees", TUNING.MaxSteerDegrees)
-car:SetAttribute("AdvancedChassis", DATA.advanced_chassis == true)
-car:SetAttribute("PeakTorque", torque)
-
-local driver = Instance.new("Script")
-driver.Name = "CarDriver"
-driver.Source = [==[__DRIVER__]==]
-driver.Parent = car
 
 if source ~= car and source.Parent ~= nil and #source:GetChildren() == 0 then
 	source:Destroy()
 end
 Selection:Set({ car })
-local chassisNote = DATA.advanced_chassis and " (A-Chassis style suspension + drivetrain)" or ""
-print("car2roblox: built '" .. car.Name .. "' with " .. #DATA.wheels .. " wheel(s) and " .. (#(DATA.passenger_seats or {}) + 1) .. " seat(s)" .. chassisNote .. ". Press Play, walk up to the car and press E at a seat (Drive for the driver's), then W/S = throttle, A/D = steer.")
+local chassisNote, howTo
+if DATA.achassis_real then
+	chassisNote = " (real A-Chassis by lisphm, MPL-2.0)"
+	howTo = ". Press Play, walk up to the driver's seat and touch/click it to get in - A-Chassis's own on-screen dashboard and controls take over from there."
+elseif DATA.advanced_chassis then
+	chassisNote = " (A-Chassis style suspension + drivetrain)"
+	howTo = ". Press Play, walk up to the car and press E at a seat (Drive for the driver's), then W/S = throttle, A/D = steer."
+else
+	chassisNote = ""
+	howTo = ". Press Play, walk up to the car and press E at a seat (Drive for the driver's), then W/S = throttle, A/D = steer."
+end
+print("car2roblox: built '" .. car.Name .. "' with " .. #DATA.wheels .. " wheel(s) and " .. (#(DATA.passenger_seats or {}) + 1) .. " seat(s)" .. chassisNote .. howTo)
 
 --[[ Recolouring: every paintable piece carries the attribute CarPaint ("primary", "secondary", ...).
 for _, d in ipairs(car:GetDescendants()) do

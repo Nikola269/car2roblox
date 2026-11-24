@@ -39,8 +39,8 @@ pip install -r requirements.txt        # numpy, Pillow
 window shows it straight away (drag to turn it, wheel to zoom, **Spin**, **Day view**), then press
 **Convert**. **Test drive** drives the converted car around on a grid with the arrow keys / WASD.
 The **Drive** tab holds *Make the car drivable*, drivetrain, top speed, the *A-Chassis style* suspension
-option, *Add tires* and *Always use new tires*. The window title and the corner of the header show the
-version.
+option, the real *A-Chassis (lisphm)* option, *Add tires* and *Always use new tires*. The window title
+and the corner of the header show the version.
 
 **Command line:**
 
@@ -58,8 +58,9 @@ Useful options: `--scale` (1.0 = real size, 1 m ≈ 3.57 studs) or `--length STU
 MeshParts without losing detail), `--target-tris N` (crude whole-car decimation),
 `--max-texture 1024`, `--drivetrain awd|rwd|fwd`, `--format glb,obj`, `--no-rig` (do not make it
 drivable), `--top-speed KMH`, `--a-chassis` (real per-wheel suspension + an RPM/torque-curve
-drivetrain, see below), `--no-tires` (do not generate tyres), `--new-tires` (replace the model's
-wheels with clean generated tires at the same positions).
+drivetrain, see below), `--a-chassis-real` (build the actual community A-Chassis kit instead, see
+below), `--no-tires` (do not generate tyres), `--new-tires` (replace the model's wheels with clean
+generated tires at the same positions).
 
 **Windows installer (`Car2RobloxSetup.exe`):** no source project can ship a pre-built Windows binary
 (it has to be built on Windows), so pick one of these:
@@ -139,6 +140,30 @@ It is still a from-scratch rig built for this converter (not the third-party "A-
 itself), tuned with the same TUNING table at the top of the setup script. Turn it off again for the
 simpler, lighter fixed-hinge rig if a particular car doesn't need it.
 
+## Real A-Chassis (lisphm)
+
+This is the actual community **A-Chassis** kit - [github.com/lisphm/A-Chassis](https://github.com/lisphm/A-Chassis)
+(v1.7.2, MPL-2.0), the one used by hundreds of Roblox driving experiences - not a lookalike. Tick
+**A-Chassis (lisphm)** in the GUI's Drive tab (or pass `--a-chassis-real` on the command line) and the
+converter:
+
+* builds the exact object tree the kit's own `Initialize`/`Drive` scripts expect (`DriveSeat`,
+  `Wheels.FL/FR/RL/RR` with their `Parts`/`WheelFixed` folders, `Body`, and the full
+  `"A-Chassis Tune"` module tree with its `Interface` ScreenGui), and
+* embeds the kit's real `Initialize.luau`, `Drive.luau`, `README`/`Units` and `"A-Chassis Tune"`
+  scripts byte-for-byte, with only the handful of `Tune` fields that depend on your model's actual
+  size, wheel layout and drivetrain (`Weight`, `WeightBSize`, `FWheelWeight`, `RWheelWeight`,
+  `AxleSize`, `WeightDist`, `Config`) substituted in - everything else is the kit's stock tuning.
+
+It needs a layout with exactly one front axle and one rear axle (a left and right wheel on each); a
+car whose wheels don't fit that falls back to the simple fixed-hinge rig with a warning. It's mutually
+exclusive with the from-scratch **A-Chassis style** option above - ticking one unticks the other.
+Once imported, press Play and walk up to the driver's seat and touch/click it to get in: A-Chassis's
+own on-screen dashboard and controls take over from there (no E-to-enter prompt, unlike the rest of
+this tool's rigs). The kit's license and the vendored files themselves live in
+`car2roblox/vendor/achassis/` (Python) - see its `NOTICE.md` for the exact upstream version and commit
+this was taken from.
+
 ## Tires
 
 Many mods arrive without usable wheels. The converter deals with that in this order:
@@ -210,7 +235,7 @@ files in, and download a `.zip`. Nothing is uploaded; everything runs in the pag
 * a 3D preview with orbit / zoom, shaded / wireframe / pieces views, wheels and a front arrow,
   a **Save picture** button, and the same `preview.png` inside the zip,
 * the same options as the app: *Make drivable*, drivetrain, top speed, *A-Chassis style* suspension,
-  *Add tires*, *Always use new tires*, and
+  the real *A-Chassis (lisphm)* option, *Add tires*, *Always use new tires*, and
 * **Drive**: a quick test drive of the converted car (W/S gas and brake, A/D steer, Space handbrake,
   R reset; on-screen buttons on phones). It is a simple vehicle model for checking size, wheel
   placement and steering, **not** Roblox physics. The real driving rig is the Studio script.

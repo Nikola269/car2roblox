@@ -67,6 +67,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="real per-wheel suspension (springs) and an RPM/torque-curve drivetrain, "
                         "in the spirit of the community 'A-Chassis' rigs, instead of the simple "
                         "fixed-hinge wheels")
+    c.add_argument("--a-chassis-real", action="store_true", dest="achassis_real",
+                   help="bundle the REAL lisphm/A-Chassis kit (MPL-2.0, github.com/lisphm/A-Chassis) "
+                        "instead of car2roblox's own rig - needs exactly one front and one rear "
+                        "axle; overrides --a-chassis when both are given")
 
     i = sub.add_parser("inspect", help="list the parts of a model without converting")
     _add_common(i)
@@ -100,7 +104,8 @@ def _options(a: argparse.Namespace) -> Options:
         add_tires=not getattr(a, "no_tires", False),
         new_tires=getattr(a, "new_tires", False), top_speed=getattr(a, "top_speed", None),
         drivetrain=getattr(a, "drivetrain", "awd"),
-        advanced_chassis=getattr(a, "advanced_chassis", False), txd=tuple(a.txd), vehicle=a.vehicle,
+        advanced_chassis=getattr(a, "advanced_chassis", False),
+        achassis_real=getattr(a, "achassis_real", False), txd=tuple(a.txd), vehicle=a.vehicle,
         config=a.config)
 
 

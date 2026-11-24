@@ -284,6 +284,86 @@ return table.concat(LOG, "\n")
         st.close()
 
 
+def run_achassis_rig(script: str, piece_names: List[str], *, select: bool = True) -> Tuple[bool, str]:
+    """Like run_rig, but inspects the real-A-Chassis object tree (DriveSeat/Wheels/Body/"A-Chassis
+    Tune") instead of car2roblox's own simple rig. It never executes the embedded Initialize.luau
+    or Drive.luau (that would need a much bigger Players/RunService mock) - it only checks the
+    shape Initialize.luau's own code requires, and that every embedded script's .Source round-trips
+    back out byte-for-byte (the thing most likely to break from the Lua-string-escaping step)."""
+    mk = "\n".join(
+        f'do local p = Instance.new("MeshPart") p.Name = "{n}" p.Parent = SRC end' for n in piece_names)
+    setup = f'''
+SRC = Instance.new("Model")
+SRC.Name = "Imported"
+SRC.Parent = workspace
+{mk}
+SEL = {{ SRC }}
+''' if select else "SEL = {}\n"
+    suffix = r'''
+local function add(k, v) LOG[#LOG + 1] = "RESULT " .. k .. "=" .. tostring(v) end
+local ds = car:FindFirstChild("DriveSeat")
+add("driveseat", ds ~= nil and ds.ClassName)
+add("driveseat_cancollide", ds ~= nil and ds.CanCollide)
+add("primary_is_driveseat", car.PrimaryPart == ds)
+
+local wheelsFolder = car:FindFirstChild("Wheels")
+add("wheels_folder", wheelsFolder ~= nil and wheelsFolder.ClassName)
+local wheelCount = 0
+for _, slot in ipairs({ "FL", "FR", "RL", "RR" }) do
+  local w = wheelsFolder and wheelsFolder:FindFirstChild(slot)
+  if w then
+    wheelCount = wheelCount + 1
+    local parts = w:FindFirstChild("Parts")
+    add("wheel_" .. slot .. "_parts_count", parts and #parts:GetChildren() or -1)
+    local wf = w:FindFirstChild("WheelFixed")
+    add("wheel_" .. slot .. "_wheelfixed", wf ~= nil and wf.ClassName)
+  end
+end
+add("wheel_count", wheelCount)
+
+local body = car:FindFirstChild("Body")
+add("body_folder", body ~= nil and body.ClassName)
+add("body_children_count", body and #body:GetChildren())
+
+local tune = car:FindFirstChild("A-Chassis Tune")
+add("tune_class", tune ~= nil and tune.ClassName)
+add("tune_source_roundtrip", tune ~= nil and (tune.Source == DATA.achassis.tune))
+
+local initS = tune and tune:FindFirstChild("Initialize")
+add("init_roundtrip", initS ~= nil and (initS.Source == DATA.achassis.initialize))
+
+local readme = tune and tune:FindFirstChild("README")
+add("readme_roundtrip", readme ~= nil and (readme.Source == DATA.achassis.readme))
+local units = readme and readme:FindFirstChild("Units")
+add("units_roundtrip", units ~= nil and (units.Source == DATA.achassis.units))
+
+local plugins = tune and tune:FindFirstChild("Plugins")
+add("plugins_empty", plugins ~= nil and #plugins:GetChildren() == 0)
+
+local iface = tune and tune:FindFirstChild("A-Chassis Interface")
+add("iface_class", iface ~= nil and iface.ClassName)
+local values = iface and iface:FindFirstChild("Values")
+add("values_count", values ~= nil and #values:GetChildren())
+local mobile = iface and iface:FindFirstChild("Mobile")
+add("mobile_class", mobile ~= nil and mobile.ClassName)
+local isOn = iface and iface:FindFirstChild("IsOn")
+local starting = isOn and isOn:FindFirstChild("Starting")
+add("starting_class", starting ~= nil and starting.ClassName)
+add("controlsopen_class", iface and iface:FindFirstChild("ControlsOpen") and
+    iface:FindFirstChild("ControlsOpen").ClassName)
+local drive = iface and iface:FindFirstChild("Drive")
+add("drive_roundtrip", drive ~= nil and (drive.Source == DATA.achassis.drive))
+add("selected", SEL[1] == car)
+return table.concat(LOG, "\n")
+'''
+    code = MOCK + "\n" + setup + "\n" + script + "\n" + suffix
+    st = LuaState()
+    try:
+        return st.run(code)
+    finally:
+        st.close()
+
+
 def parse_results(text: str) -> dict:
     out = {}
     for ln in text.splitlines():

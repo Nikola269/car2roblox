@@ -50,6 +50,7 @@ cases["bflex_nestedoffset"] = (out / "bflex_nestedoffset" / "mod.zip", Options()
 cases["sa_nowheel"] = (out / "sa_nowheel" / "testcar.dff", Options())
 cases["sa_speed"] = (out / "sa" / "testcar.dff", Options(top_speed=120))
 cases["sa_achassis"] = (out / "sa" / "testcar.dff", Options(advanced_chassis=True))
+cases["sa_achassis_real"] = (out / "sa" / "testcar.dff", Options(achassis_real=True))
 cases["wobj_none_notires"] = (out / "wobj_none" / "car.obj", Options(add_tires=False))
 for k, (p, o) in cases.items():
     o.name = k

@@ -3,6 +3,7 @@ import re, subprocess, sys
 from pathlib import Path
 here = Path(__file__).resolve().parent
 subprocess.run([sys.executable, str(here / "gen_rig.py")], check=True)
+subprocess.run([sys.executable, str(here / "gen_achassis.py")], check=True)
 src = sorted((here / "src").glob("*.js"))
 core_files = [p for p in src if int(p.name[:2]) < 60]
 core = "\n".join(p.read_text() for p in core_files)

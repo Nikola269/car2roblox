@@ -175,6 +175,12 @@ def test_drive_and_tire_options_reach_the_converter():
     assert o.rig is False and o.add_tires is False and o.top_speed == 140.0 and o.drivetrain == "rwd"
     _, _, d = gui.options_from_values({"input": "a"})
     assert d.rig and d.add_tires and d.top_speed is None and d.drivetrain == "awd"
+    assert d.advanced_chassis is False and d.achassis_real is False
+
+
+def test_achassis_real_option_reaches_the_converter():
+    _, _, o = gui.options_from_values({"input": "a", "achassis_real": True})
+    assert o.achassis_real is True
 
 
 @pytest.mark.parametrize("values,needle", [

@@ -133,6 +133,7 @@ def options_from_values(v: Dict[str, object]) -> Tuple[str, str, Options]:
         formats=fmts, rig=bool(v.get("rig", True)), add_tires=bool(v.get("add_tires", True)),
         new_tires=bool(v.get("new_tires", False)), top_speed=top_speed, drivetrain=drivetrain,
         advanced_chassis=bool(v.get("advanced_chassis", False)),
+        achassis_real=bool(v.get("achassis_real", False)),
         txd=tuple(v.get("txd", ()) or ()),                      # type: ignore[arg-type]
         vehicle=str(v.get("vehicle", "") or "").strip() or None,
         config=str(v.get("config", "") or "").strip() or None)
@@ -265,6 +266,7 @@ class ConverterApp:
             "glb": b(value=True), "obj": b(value=True), "rig": b(value=True), "add_tires": b(value=True), "new_tires": b(value=False),
             "glass": b(value=True), "interior": b(value=True), "lights": b(value=True),
             "lod": b(value=False), "flip": b(value=False), "advanced_chassis": b(value=False),
+            "achassis_real": b(value=False),
         }
 
         self._build_style()
@@ -485,23 +487,41 @@ class ConverterApp:
                        "of the community 'A-Chassis' rigs. Leave this off for the simpler, lighter "
                        "fixed-hinge rig."
                   ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(2, 10))
-        ttk.Label(t, text="Tires", style="Head.TLabel").grid(row=7, column=0, columnspan=3, sticky="w",
+        self.ck_a_chassis_real = ttk.Checkbutton(
+            t, text="Real A-Chassis (by lisphm, MPL-2.0) - the actual community chassis kit",
+            variable=self.v["achassis_real"])
+        self.ck_a_chassis_real.grid(row=7, column=0, columnspan=3, sticky="w")
+        self._drive_controls.append((self.ck_a_chassis_real, "normal"))
+        ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
+                  text="Bundles the real, widely-used github.com/lisphm/A-Chassis scripts (used by "
+                       "hundreds of Roblox experiences) verbatim, with its own on-screen dashboard "
+                       "and controls, instead of either rig above. Needs exactly one front axle and "
+                       "one rear axle (a left and right wheel on each) - takes over from the option "
+                       "above when both are ticked."
+                  ).grid(row=8, column=0, columnspan=3, sticky="w", pady=(2, 10))
+
+        def _achassis_real_toggled(*_a):
+            if self.v["achassis_real"].get():
+                self.v["advanced_chassis"].set(False)
+        self.v["achassis_real"].trace_add("write", _achassis_real_toggled)
+
+        ttk.Label(t, text="Tires", style="Head.TLabel").grid(row=9, column=0, columnspan=3, sticky="w",
                                                               pady=(4, 2))
         ttk.Checkbutton(t, text="Add tires if the model has none", variable=self.v["add_tires"]
-                        ).grid(row=8, column=0, columnspan=3, sticky="w")
+                        ).grid(row=10, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(t, text="Always use new tires (keep the wheel positions, replace the look)",
-                        variable=self.v["new_tires"]).grid(row=9, column=0, columnspan=3, sticky="w", pady=(4, 0))
+                        variable=self.v["new_tires"]).grid(row=11, column=0, columnspan=3, sticky="w", pady=(4, 0))
         ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
                   text="Many mods (BeamNG especially) arrive without wheels, with the wheels "
                        "left in the middle of the car, or with only some of them. The converter "
                        "moves, copies or builds the missing wheels. If a mod's own wheels still "
                        "look wrong, tick 'Always use new tires'. Turn 'Add tires' off if the body "
                        "already has its wheels built in."
-                  ).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 10))
+                  ).grid(row=12, column=0, columnspan=3, sticky="w", pady=(2, 10))
         ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
                   text="Use 'Test drive' under the preview to try steering and wheel placement "
                        "before importing. It is a simple preview, not Roblox physics."
-                  ).grid(row=11, column=0, columnspan=3, sticky="w")
+                  ).grid(row=13, column=0, columnspan=3, sticky="w")
 
     def _build_stage(self) -> None:
         P = PALETTE

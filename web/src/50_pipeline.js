@@ -661,12 +661,29 @@ async function makeOutputs(model, built, opts, log, warnings, light = false) {
     // km/h -> studs per second (a stud is 0.28 m)
     const topSpeed = opts.topSpeed && opts.topSpeed > 0 ? Math.round(opts.topSpeed / 3.6 / 0.28 * 10) / 10 : null;
     if (!wheels.length) warnings.push("No wheels were detected, so the rig script builds a body + seat only. Wheel parts need 'wheel', 'tire' or 'rim' in their names.");
+    const rigWheels = wheels.map((w, i) => ({ slot: w.slot, hub: w.hub.map(r4f), radius: r4f(w.radius), width: r4f(w.width), pieces: w.pieces, primary: w.primary, steer: flags[i][0], drive: flags[i][1] }));
+    const achassisReal = !!opts.achassisReal && fitsAchassis(rigWheels);
+    if (opts.achassisReal && !achassisReal) {
+      warnings.push("Real A-Chassis needs exactly one front axle and one rear axle (a left and right wheel on each); this car's wheel layout doesn't match that, so the simple drivable rig was used instead.");
+    }
+    let achassisExtra = {};
+    if (achassisReal) {
+      const sizeWhl = { width: size[0], height: size[1], length: size[2] };
+      achassisExtra = { achassis: {
+        tune: achassisBuildTuneSource(sizeWhl, rigWheels, opts.drivetrain),
+        initialize: ACHASSIS_SOURCES.initialize, readme: ACHASSIS_SOURCES.readme,
+        units: ACHASSIS_SOURCES.units, drive: ACHASSIS_SOURCES.drive,
+        values: ACHASSIS_VALUES_SPEC,
+      } };
+    }
     lua = makeRigScript({
       name, drivetrain: opts.drivetrain, body: bodyPiece.name,
       pieces: pieces.map((p) => ({ name: p.name, kind: p.kind, center: pieceBox(p).center.map(r4f), size: pieceBox(p).size.map(r4f), paint: p.material.paint })),
-      wheels: wheels.map((w, i) => ({ slot: w.slot, hub: w.hub.map(r4f), radius: r4f(w.radius), width: r4f(w.width), pieces: w.pieces, primary: w.primary, steer: flags[i][0], drive: flags[i][1] })),
+      wheels: rigWheels,
       collider: manifest.collider, seat: manifest.seat, passenger_seats: manifest.passenger_seats,
       advanced_chassis: !!opts.advancedChassis,
+      achassis_real: achassisReal,
+      ...achassisExtra,
       ...(topSpeed ? { top_speed: topSpeed } : {}),
     }, name, fmts.has('glb') ? glbName : 'the .obj files');
     add(`${name}_setup.lua`, lua);
