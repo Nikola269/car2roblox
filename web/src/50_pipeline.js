@@ -10,7 +10,7 @@ function defaultOptions() {
     paint: null, paint2: null, paint3: null, includeLod: false, includeGlass: true, includeInterior: true,
     includeLights: true, maxTrisPerMesh: ROBLOX_MAX_TRIANGLES, targetTris: null, maxTexture: 1024,
     formats: ['glb', 'obj'], rig: true, addTires: true, newTires: false, topSpeed: null, drivetrain: 'awd',
-    advancedChassis: false, vehicle: null, config: null,
+    advancedChassis: false, vehicle: null, config: null, stripLinks: true,
   };
 }
 const sanitize = (name, fallback = 'Part') => {

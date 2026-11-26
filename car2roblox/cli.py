@@ -71,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="bundle the REAL lisphm/A-Chassis kit (MPL-2.0, github.com/lisphm/A-Chassis) "
                         "instead of car2roblox's own rig - needs exactly one front and one rear "
                         "axle; overrides --a-chassis when both are given")
+    c.add_argument("--keep-links", action="store_true",
+                   help="do not cut a link (URL) out of a part/material/texture/model name. Note: "
+                        "deleting a part/material/texture whose name carries an adult-content marker, "
+                        "and refusing a risky file (.exe, a disguised shortcut, ...) in a mod archive, "
+                        "are not optional and always run")
 
     i = sub.add_parser("inspect", help="list the parts of a model without converting")
     _add_common(i)
@@ -106,7 +111,7 @@ def _options(a: argparse.Namespace) -> Options:
         drivetrain=getattr(a, "drivetrain", "awd"),
         advanced_chassis=getattr(a, "advanced_chassis", False),
         achassis_real=getattr(a, "achassis_real", False), txd=tuple(a.txd), vehicle=a.vehicle,
-        config=a.config)
+        config=a.config, strip_links=not getattr(a, "keep_links", False))
 
 
 def main(argv: Optional[List[str]] = None) -> int:

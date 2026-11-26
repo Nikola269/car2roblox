@@ -191,6 +191,18 @@ const refManifest = (n) => JSON.parse(fs.readFileSync(path.join(FX, 'ref', n, 'm
     assert.ok(/deleted a part \(adult-content name\)/.test(warn) && !/nude_sticker/.test(warn) && /removed a link/.test(warn), warn);
     for (const f of r.out.files) if (/\.(json|lua|txt|obj|mtl)$/.test(f.name)) assert.ok(!/evil\.com/i.test(Buffer.from(f.data).toString('utf8')), f.name);
   });
+  await t('stripLinks:false keeps the link, adult deletion still always runs', async () => {
+    const src = fs.readFileSync(path.join(FX, 'obj_z', 'car.obj'), 'utf8').replace('o body', 'o body_www.evil.com').replace('o roof', 'o nude_sticker');
+    const d3 = fs.mkdtempSync(path.join(require('os').tmpdir(), 'c2r-'));
+    fs.writeFileSync(path.join(d3, 'car.obj'), src);
+    fs.copyFileSync(path.join(FX, 'obj_z', 'car.mtl'), path.join(d3, 'car.mtl'));
+    const r = await convertDir(d3, { name: 'x', stripLinks: false });
+    const names = r.built.pieces.map((p) => p.name);
+    assert.ok(names.some((n) => /evil|www/i.test(n)), names.join());     // the link stayed
+    assert.ok(!names.some((n) => /nude/i.test(n)), names.join());        // adult deletion still ran
+    const warn = r.out.warnings.join('\n');
+    assert.ok(!/removed a link/.test(warn) && /deleted a part \(adult-content name\)/.test(warn), warn);
+  });
   await t('risky files in a BeamNG zip are reported', async () => {
     const z0 = await C.openZip(new C.BytesSource(new Uint8Array(fs.readFileSync(path.join(FX, 'beam', 'mod.zip')))));
     const files = [];

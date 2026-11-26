@@ -91,9 +91,17 @@ def import_gta_sa(dff_path: str, txd_paths: Sequence[str] = (), include_lod: boo
                 missing.add(tex)
                 tex = None
             name = tex or (f"paint_{paint}" if paint else f"color_{r:02x}{gg:02x}{b:02x}")
+            # a < 191 (~0.75): real SA glass sits around 90-180; values above that (up to 255) are
+            # export/quantisation noise or deliberate near-opaque shading (AO/dirt/decal layers on a
+            # solid panel), not an intentionally see-through material. The old cut-off (217) still
+            # let a lot of that noise through as "transparent", which is what mis-classified solid
+            # chassis/cage/trim parts as "glass" - they inherit the Roblox Glass material and render
+            # as a translucent ghost double over the real body. classify_part() also refuses to turn
+            # a part named like a body panel into glass from this flag alone, as a second line of
+            # defence if a model's noise alpha is still low enough to slip under this cut-off.
             ids.append(model.add_material(Material(
                 name=name, color=(r / 255, gg / 255, b / 255, a / 255), texture=tex,
-                paint=paint, transparent=a < 250)))
+                paint=paint, transparent=a < 191)))
         geom_matmaps.append(ids)
     if missing:
         model.notes.append("Textures referenced but not found in any TXD: "

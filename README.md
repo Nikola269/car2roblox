@@ -214,18 +214,30 @@ anything is written:
 
 * **Links are removed.** `http://`, `www.`, `ftp:`, `javascript:` and bare `site.com` / `site.ru` style
   text are stripped from part, material, texture and model names. Remote texture addresses
-  (`scheme://...`) are never followed.
+  (`scheme://...`) are never followed. Tick **Strip links (URLs) out of names** off (`--keep-links`
+  on the command line) if you'd rather keep a name exactly as the mod shipped it - this is the only
+  part of the filter that's optional.
 * **18+ content is deleted.** A part, material or texture whose *name* carries an adult-content
   marker (nsfw, nude, porn, hentai, `18+`, r18, x-rated, ...) is removed, together with the
-  triangles that use it. If nothing is left the conversion stops with an error.
+  triangles that use it. If nothing is left the conversion stops with an error. This always runs and
+  cannot be turned off.
 * **Risky files are ignored.** Shortcuts (`.url`, `.lnk`), programs, installers, scripts, web pages
   and double extensions such as `skin.png.exe` found in a mod folder or zip are never opened, run
-  or copied.
+  or copied. This always runs and cannot be turned off.
 * Everything removed is listed in the warnings (`manifest.json`, the GUI log, the browser's
   "Safety filter" panel). Deleted adult names are not echoed back.
 
 The filter works on **names and file types only**. It cannot tell what a texture picture shows, so it is
 not a guarantee that a model is clean. Check models yourself before uploading anything to Roblox.
+
+A part, material or chassis/cage mesh that is solid in the game but carries a slightly-under-opaque
+alpha value in its own file (common AO/sheen/dirt/decal baking in SA, BeamNG and GTA V exports alike)
+used to get misread as glass and rendered as a translucent "ghost" double over the real body. Both the
+alpha cut-offs and the name-based classifier (`classify.py` / `40_import.js`) were tightened so a part
+that isn't named like a window needs a much more convincingly transparent alpha before it's treated as
+glass, and a part named like a body panel, the chassis or a cage is never swept into glass by alpha
+alone - fixed in the GTA SA, BeamNG and generic (OBJ/GLB/GLTF/DAE, including GTA V exports) importers,
+in both the Python app and the browser version.
 
 ## Browser version
 

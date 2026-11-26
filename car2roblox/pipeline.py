@@ -62,6 +62,9 @@ class Options:
     txd: Tuple[str, ...] = ()
     vehicle: Optional[str] = None         # BeamNG: which vehicle inside a multi-vehicle archive
     config: Optional[str] = None          # BeamNG: .pc configuration name
+    strip_links: bool = True              # cut a link out of a part/material/texture/model name.
+                                           # (cosmetic only - deleting adult-content-named parts and
+                                           # refusing risky archive files are not optional, see safety.py)
 
 
 @dataclass
@@ -120,7 +123,9 @@ def load_model(path: str, opts: Options, log: Log) -> Model:
         model = import_generic(str(p), log)
     else:
         raise ConversionError(f"unknown source type '{src}'")
-    scrub_model(model)               # links and adult-content names are removed here (notes -> warnings)
+    # links and adult-content names are removed here (notes -> warnings); strip_links only
+    # affects the link part - see Options.strip_links / safety.scrub_model
+    scrub_model(model, strip_links=opts.strip_links)
     return model
 
 

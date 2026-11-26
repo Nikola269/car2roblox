@@ -120,9 +120,13 @@ def import_obj(path: Path, log: Callable[[str], None]) -> Model:
                 except ConversionError as exc:
                     model.notes.append(f"texture {f.name}: {exc}")
         paint = None
+        # 0.75, not 0.85: an MTL 'd' well under 1 is routinely left by exporters for subtle
+        # sheen/AO blending, not an intentionally see-through material - see the note by the glTF
+        # alphaMode check below for what over-eager "transparent" detection breaks. classify_part()
+        # also refuses to turn a part named like a body panel into glass from this flag alone.
         idx = model.add_material(Material(name=name or "material",
                                           color=(kd[0], kd[1], kd[2], alpha), texture=tex,
-                                          paint=paint, transparent=alpha < 0.98))
+                                          paint=paint, transparent=alpha < 0.75))
         mat_ids[name] = idx
         return idx
 
@@ -327,7 +331,16 @@ def import_gltf(path: Path, log: Callable[[str], None]) -> Model:
                 color = (1.0, 1.0, 1.0, 1.0)
             if "baseColorTexture" in pbr:
                 tex = texture_for(pbr["baseColorTexture"]["index"])
-            transparent = m.get("alphaMode") == "BLEND" or color[3] < 0.98
+            # glTF's own spec says alpha is only meaningful in "BLEND" mode - in the default
+            # "OPAQUE" mode a renderer must ignore it, but real exporters (CodeWalker, Sollumz,
+            # Blender) routinely leave a baseColorFactor alpha well under 1 on an OPAQUE material
+            # anyway (AO/sheen blending baked into the same channel). Trusting that stray value too
+            # readily is what mis-classified solid chassis/cage/trim parts as glass - they'd pick up
+            # the Roblox Glass material and render as a translucent ghost double on top of the real
+            # body. Only a clearly see-through alpha (<0.75) overrides that for a sloppy exporter that
+            # skipped alphaMode entirely but still meant real glass; classify_part() also refuses to
+            # turn a part named like a body panel into glass from this flag alone.
+            transparent = m.get("alphaMode") == "BLEND" or color[3] < 0.75
             double = bool(m.get("doubleSided"))
         mat_map[k] = model.add_material(Material(name=name, color=color, texture=tex,
                                                  transparent=transparent, double_sided=double))
@@ -427,8 +440,9 @@ def import_dae_generic(path: Path, log: Callable[[str], None]) -> Model:
                             tex = key
                         except ConversionError as exc:
                             model.notes.append(f"texture {f.name}: {exc}")
+            # same 0.75 cut-off as the other importers - see the glTF alphaMode note above.
             ids.append(model.add_material(Material(name=nm, color=color, texture=tex,
-                                                   transparent=color[3] < 0.98)))
+                                                   transparent=color[3] < 0.75)))
         m = inst.mesh
         gl = np.asarray(ids, dtype=np.int32) if ids else np.zeros(1, np.int32)
         model.parts.append(Part(inst.node_name or inst.geometry_name,

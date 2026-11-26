@@ -678,7 +678,13 @@ def import_beamng(path: str, vehicle: Optional[str] = None, config: Optional[str
             if dm.texture_path:
                 tex = load_tex(dm.texture_path)
             transparent = dm.transparent
-        if color[3] < 0.98:
+        # 0.75, not 0.85: BeamNG materials routinely carry a diffuseColor/baseColorFactor alpha well
+        # under 1 for dirt/wear/decal layers that are not meant to look see-through at all; treating
+        # a value that high as "transparent" is what mis-classified solid parts (a chassis/cage mesh,
+        # a decal-layered body panel) as glass, which renders as a translucent ghost double in both
+        # the preview and Studio. classify_part() also refuses to turn a part named like a body panel
+        # into glass from this flag alone, as a second line of defence.
+        if color[3] < 0.75:
             transparent = True
         if "glass" in tokens(local):
             transparent = True

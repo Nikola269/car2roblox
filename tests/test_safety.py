@@ -95,6 +95,20 @@ def test_adult_material_deletes_its_triangles(tmp_path):
     assert any("deleted part 'roof'" in n or "adult-content material" in n for n in model.notes)
 
 
+def test_strip_links_option_keeps_the_link_but_adult_deletion_still_always_runs(tmp_path):
+    src = _obj_with_names(tmp_path, "body_www.evil.com", "nude_sticker")
+    out = tmp_path / "out"
+    res = convert(str(src), str(out), Options(rig=True, strip_links=False), quiet)
+    names = [p["name"] for p in res.manifest["pieces"]]
+    # the link-stripping option is off: the link stays in the name...
+    assert any("evil.com" in n.lower() or "www" in n.lower() for n in names)
+    # ...but deleting an adult-content-named part is not optional, and still happened
+    assert not any("nude" in n.lower() for n in names)
+    joined = "\n".join(res.warnings)
+    assert "removed a link" not in joined
+    assert "deleted a part (adult-content name)" in joined
+
+
 def test_everything_adult_is_an_error(tmp_path):
     src = _obj_with_names(tmp_path, "nude_a", "porn_b")
     with pytest.raises(ConversionError, match="safety filter"):

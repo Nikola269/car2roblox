@@ -29,6 +29,22 @@ const K_NOT_WHEEL = new Set(['arch', 'arches', 'well', 'wells', 'house', 'housin
 const K_GLASS = new Set(['glass', 'window', 'windows', 'windscreen', 'windshield', 'windscreens']);
 const K_INTERIOR = new Set(['interior', 'seat', 'seats', 'dash', 'dashboard', 'steering', 'cabin', 'cockpit', 'ped', 'headliner']);
 const K_LIGHT = new Set(['light', 'lights', 'lamp', 'lamps', 'headlight', 'headlights', 'taillight', 'taillights', 'indicator', 'indicators', 'foglight']);
+// a part named like one of these is never *meant* to be see-through, whatever its material's alpha
+// says - every importer's "transparent" flag is a heuristic read off a colour/alpha channel that
+// real exporters routinely leave a little under fully opaque for AO/sheen/dirt/decal baking, not to
+// signal real glass (see the alpha-cutoff notes further down). That false "transparent" reading is
+// what swept an unrelated body panel, the chassis or a cage mesh into "glass" below and made it
+// render as a translucent ghost double over the solid body underneath. Port of classify.py's
+// _NOT_GLASS.
+const K_NOT_GLASS = new Set(['bumper', 'bumpers', 'bonnet', 'bonnets', 'hood', 'hoods', 'roof', 'roofs', 'door', 'doors',
+  'fender', 'fenders', 'wing', 'wings', 'mirror', 'mirrors', 'trim', 'trims', 'grille', 'grill', 'grilles', 'grills',
+  'spoiler', 'spoilers', 'exhaust', 'exhausts', 'chassis', 'cage', 'cages', 'frame', 'frames', 'subframe',
+  'crossmember', 'shell', 'panel', 'panels', 'skirt', 'skirts', 'bootlid', 'boot', 'boots', 'trunk', 'tailgate',
+  'hatch', 'hatches', 'pillar', 'pillars', 'sill', 'sills', 'bar', 'bars', 'guard', 'guards', 'plate', 'plates',
+  'badge', 'badges', 'handle', 'handles', 'wiper', 'wipers', 'antenna', 'antennas', 'aerial', 'vent', 'vents',
+  'scoop', 'scoops', 'splitter', 'splitters', 'diffuser', 'diffusers', 'undertray', 'underbody', 'engine', 'engines',
+  'radiator', 'radiators', 'intercooler', 'turbo', 'turbos', 'bay', 'bays', 'floor', 'floors', 'rail', 'rails',
+  'mount', 'mounts', 'bracket', 'brackets', 'decal', 'decals', 'sticker', 'stickers', 'livery']);
 const SLOT_TOKENS = { fl: 'FL', fr: 'FR', rl: 'RL', rr: 'RR', lf: 'FL', rf: 'FR', lb: 'RL', lr: 'RL', rb: 'RR', bl: 'RL', br: 'RR', lm: 'ML', rm: 'MR' };
 const KINDS = ['body', 'wheel', 'glass', 'interior', 'light', 'other'];
 function tokens(name) {
@@ -48,7 +64,7 @@ function classifyPart(name, materialNames, transparent, hint) {
   const mt = [];
   for (const m of materialNames) mt.push(...tokens(m));
   const mGlass = anyIn(K_GLASS, mt);
-  if (transparent && (mGlass || !anyIn(K_LIGHT, tk))) return 'glass';
+  if (transparent && (mGlass || !(anyIn(K_LIGHT, tk) || anyIn(K_NOT_GLASS, tk)))) return 'glass';
   if (mGlass) return 'glass';
   if (anyIn(K_LIGHT, tk)) return 'light';
   return 'body';
@@ -105,22 +121,26 @@ function scanFiles(paths) {
   for (const p of paths) { const why = riskyFile(p); if (why) out.push([p, why]); }
   return out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
-function cleanName(name, what, msgs) {
+function cleanName(name, what, msgs, strip) {
+  if (!strip) return name;
   const [cleaned, links] = stripLinks(name);
   if (links.length) { msgs.push(`removed a link from a ${what} name (now '${cleaned || what}')`); return cleaned || what; }
   return name;
 }
-function scrubModel(model) {
+// stripLinksOpt only controls whether a link embedded in a name is cut out of it - cosmetic.
+// Deleting an adult-content-named part/material/texture, and refusing a risky archive file,
+// are not optional and always run; see car2roblox/safety.py's scrub_model for the full story.
+function scrubModel(model, stripLinksOpt = true) {
   const msgs = [];
-  model.name = cleanName(model.name, 'model', msgs) || 'Car';
+  model.name = cleanName(model.name, 'model', msgs, stripLinksOpt) || 'Car';
   const badTex = new Set();
   for (const [key, tex] of model.textures) {
-    tex.name = cleanName(tex.name, 'texture', msgs);
+    tex.name = cleanName(tex.name, 'texture', msgs, stripLinksOpt);
     if (isAdultName(key) || isAdultName(tex.name)) badTex.add(key);
   }
   const badMats = new Set();
   model.materials.forEach((m, i) => {
-    m.name = cleanName(m.name, 'material', msgs);
+    m.name = cleanName(m.name, 'material', msgs, stripLinksOpt);
     if (isAdultName(m.name) || (m.texture !== null && badTex.has(m.texture))) badMats.add(i);
   });
   for (const key of badTex) {
@@ -130,7 +150,7 @@ function scrubModel(model) {
   for (const i of badMats) if (model.materials[i].texture !== null && badTex.has(model.materials[i].texture)) model.materials[i].texture = null;
   const kept = [];
   for (const part of model.parts) {
-    part.name = cleanName(part.name, 'part', msgs);
+    part.name = cleanName(part.name, 'part', msgs, stripLinksOpt);
     if (isAdultName(part.name)) { msgs.push('deleted a part (adult-content name)'); continue; }
     if (badMats.size) {
       const keep = [];
@@ -193,7 +213,9 @@ function importGtaSa(dffName, dffBytes, txds, includeLod, log) {
       let tex = dm.texture ? dm.texture.toLowerCase() : null;
       if (tex && !model.textures.has(tex)) { missing.add(tex); tex = null; }
       const name = tex || (paint ? `paint_${paint}` : `color_${hex2(r)}${hex2(gg)}${hex2(b)}`);
-      ids.push(addMaterial(model, makeMaterial({ name, color: [r / 255, gg / 255, b / 255, a / 255], texture: tex, paint, transparent: a < 250 })));
+      // a < 191 (~0.75): see imp_gtasa.py's note - above that is export noise or near-opaque
+      // AO/dirt/decal shading, not real glass; classifyPart() is a second line of defence too.
+      ids.push(addMaterial(model, makeMaterial({ name, color: [r / 255, gg / 255, b / 255, a / 255], texture: tex, paint, transparent: a < 191 })));
     }
     matmaps.push(ids);
   }
@@ -794,7 +816,9 @@ async function importBeamng(store, srcName, opts, log) {
       if (dm.texturePath) tex = await loadTex(dm.texturePath);
       transparent = dm.transparent;
     }
-    if (color[3] < 0.98) transparent = true;
+    // 0.75, not 0.85: see imp_beamng.py's note - a stray alpha well under 1 from a dirt/decal layer
+    // is not a "see-through" material, and treating it as one mis-classified solid parts as glass.
+    if (color[3] < 0.75) transparent = true;
     if (tokens(local).includes('glass')) transparent = true;
     const idx = addMaterial(model, makeMaterial({ name: local.replace(/-material$/, '') || 'material', color, texture: tex, paint, transparent, doubleSided: double }));
     matCache.set(ck, idx);
@@ -973,7 +997,8 @@ async function importObj(store, path, log) {
       if (!f) model.notes.push(`texture '${d.map_kd}' referenced by the MTL was not found`);
       else tex = await addStoreTexture(model, store, f, log);
     }
-    const idx = addMaterial(model, makeMaterial({ name: name || 'material', color: [kd[0], kd[1], kd[2], alpha], texture: tex, transparent: alpha < 0.98 }));
+    // 0.75, not 0.85: see imp_generic.py's note on the same MTL 'd' factor.
+    const idx = addMaterial(model, makeMaterial({ name: name || 'material', color: [kd[0], kd[1], kd[2], alpha], texture: tex, transparent: alpha < 0.75 }));
     matIds.set(name, idx);
     return idx;
   }
@@ -1135,7 +1160,9 @@ async function importGltf(store, path, log) {
       const f = pbr.baseColorFactor;
       color = f ? [linearToSrgb(f[0]), linearToSrgb(f[1]), linearToSrgb(f[2]), f[3]] : [1, 1, 1, 1];
       if (pbr.baseColorTexture) tex = await textureFor(pbr.baseColorTexture.index);
-      transparent = m.alphaMode === 'BLEND' || color[3] < 0.98;
+      // see imp_generic.py's note: glTF only means alpha in "BLEND" mode; a stray OPAQUE-mode
+      // alpha well under 1 is exporter noise, not real glass, hence the tighter 0.75 fallback.
+      transparent = m.alphaMode === 'BLEND' || color[3] < 0.75;
       double = !!m.doubleSided;
     }
     const idx = addMaterial(model, makeMaterial({ name, color, texture: tex, transparent, doubleSided: double }));
@@ -1216,7 +1243,8 @@ async function importDaeGeneric(store, path, log) {
         if (f) tex = await addStoreTexture(model, store, f, log);
       }
     }
-    ids.push(addMaterial(model, makeMaterial({ name: nm, color, texture: tex, transparent: color[3] < 0.98 })));
+    // same 0.75 cut-off as the other importers - see imp_generic.py's note above.
+    ids.push(addMaterial(model, makeMaterial({ name: nm, color, texture: tex, transparent: color[3] < 0.75 })));
   }
   for (const inst of scene.instances) {
     const m = inst.mesh;
@@ -1273,6 +1301,6 @@ async function loadModel(store, src, srcName, opts, log) {
   } else if (kind === 'generic') {
     model = await importGeneric(store, src.path, log);
   } else throw new ConversionError(`unknown source type '${kind}'`);
-  scrubModel(model);
+  scrubModel(model, opts.stripLinks !== false);
   return model;
 }

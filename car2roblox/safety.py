@@ -94,7 +94,9 @@ def scan_files(paths: Iterable[str]) -> List[Tuple[str, str]]:
     return sorted(out)
 
 
-def _clean(name: str, what: str, msgs: List[str]) -> str:
+def _clean(name: str, what: str, msgs: List[str], strip: bool = True) -> str:
+    if not strip:
+        return name
     cleaned, links = strip_links(name)
     if links:
         msgs.append(f"removed a link from a {what} name (now '{cleaned or what}')")
@@ -102,19 +104,27 @@ def _clean(name: str, what: str, msgs: List[str]) -> str:
     return name
 
 
-def scrub_model(model: Model, log: Callable[[str], None] = lambda s: None) -> List[str]:
-    """Apply the filter in place. Returns the messages (they are also added to ``model.notes``)."""
+def scrub_model(model: Model, log: Callable[[str], None] = lambda s: None, *,
+                strip_links: bool = True) -> List[str]:
+    """Apply the filter in place. Returns the messages (they are also added to ``model.notes``).
+
+    ``strip_links`` only controls whether a link embedded in a part/material/texture/model *name*
+    is cut out of that name - cosmetic, and safe to turn off if you want to keep a name as-is.
+    Deleting parts/materials/textures whose name carries an adult-content marker, and refusing to
+    extract a risky file (``.exe``, a disguised shortcut, ...) from a mod archive, are not
+    controlled by any option here: those always run, on every conversion.
+    """
     msgs: List[str] = []
-    model.name = _clean(model.name, "model", msgs) or "Car"
+    model.name = _clean(model.name, "model", msgs, strip_links) or "Car"
 
     bad_tex = set()
     for key, tex in model.textures.items():
-        tex.name = _clean(tex.name, "texture", msgs)
+        tex.name = _clean(tex.name, "texture", msgs, strip_links)
         if is_adult_name(key) or is_adult_name(tex.name):
             bad_tex.add(key)
     bad_mats = set()
     for i, m in enumerate(model.materials):
-        m.name = _clean(m.name, "material", msgs)
+        m.name = _clean(m.name, "material", msgs, strip_links)
         if is_adult_name(m.name) or (m.texture in bad_tex):
             bad_mats.add(i)
     for key in bad_tex:
@@ -126,7 +136,7 @@ def scrub_model(model: Model, log: Callable[[str], None] = lambda s: None) -> Li
 
     kept = []
     for part in model.parts:
-        part.name = _clean(part.name, "part", msgs)
+        part.name = _clean(part.name, "part", msgs, strip_links)
         if is_adult_name(part.name):
             msgs.append("deleted a part (adult-content name)")
             continue

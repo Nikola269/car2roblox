@@ -136,7 +136,8 @@ def options_from_values(v: Dict[str, object]) -> Tuple[str, str, Options]:
         achassis_real=bool(v.get("achassis_real", False)),
         txd=tuple(v.get("txd", ()) or ()),                      # type: ignore[arg-type]
         vehicle=str(v.get("vehicle", "") or "").strip() or None,
-        config=str(v.get("config", "") or "").strip() or None)
+        config=str(v.get("config", "") or "").strip() or None,
+        strip_links=bool(v.get("strip_links", True)))
 
 
 # --------------------------------------------------------------------------- preview data (no Tk)
@@ -266,7 +267,7 @@ class ConverterApp:
             "glb": b(value=True), "obj": b(value=True), "rig": b(value=True), "add_tires": b(value=True), "new_tires": b(value=False),
             "glass": b(value=True), "interior": b(value=True), "lights": b(value=True),
             "lod": b(value=False), "flip": b(value=False), "advanced_chassis": b(value=False),
-            "achassis_real": b(value=False),
+            "achassis_real": b(value=False), "strip_links": b(value=True),
         }
 
         self._build_style()
@@ -456,6 +457,15 @@ class ConverterApp:
                                                               pady=(14, 0))
         ttk.Checkbutton(t, text="GLB (recommended)", variable=self.v["glb"]).grid(row=8, column=0, sticky="w", pady=3)
         ttk.Checkbutton(t, text="OBJ pieces", variable=self.v["obj"]).grid(row=8, column=1, sticky="w", pady=3)
+        ttk.Label(t, text="Names", style="Head.TLabel").grid(row=9, column=0, columnspan=3, sticky="w",
+                                                              pady=(14, 0))
+        ttk.Checkbutton(t, text="Strip links (URLs) out of part/material/texture names",
+                        variable=self.v["strip_links"]).grid(row=10, column=0, columnspan=3, sticky="w", pady=3)
+        ttk.Label(t, style="Muted.TLabel", justify="left", wraplength=380,
+                  text="Deleting a part/material/texture whose name carries an adult-content marker, "
+                       "and refusing a risky file (.exe, a disguised shortcut, ...) found in a mod "
+                       "archive, always run - that part of the safety filter cannot be turned off."
+                  ).grid(row=11, column=0, columnspan=3, sticky="w")
 
         # -- Drive
         t = tab("Drive")

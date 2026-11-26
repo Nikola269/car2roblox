@@ -175,6 +175,7 @@
     o.achassisReal = $('oAChassisReal').checked;
     o.vehicle = $('vehWrap').hidden ? null : ($('vehSelect').value || null);
     o.config = $('cfgWrap').hidden ? null : ($('cfgSelect').value || null);
+    o.stripLinks = $('oStripLinks').checked;
     return o;
   }
 
@@ -318,7 +319,7 @@
     await new Promise((r) => setTimeout(r, 0));
     const opts = readOptions();
     try {
-      const model = await loadModel(S.store, src, S.zipName, { source: 'auto', vehicle: opts.vehicle, config: opts.config, includeLod: opts.includeLod }, loadLog);
+      const model = await loadModel(S.store, src, S.zipName, { source: 'auto', vehicle: opts.vehicle, config: opts.config, includeLod: opts.includeLod, stripLinks: opts.stripLinks }, loadLog);
       S.model = model; S.newModel = true; S.imgCache = new Map();
       if (isNewSource) { S.paintTouched = [false, false, false]; $('oName').value = ''; }
     } catch (e) { logAll(); showError(e); return; }
@@ -420,6 +421,9 @@
   $('vehSelect').addEventListener('change', () => { refreshBeamngPickers(true); loadSelected(false); });
   $('cfgSelect').addEventListener('change', () => loadSelected(false));
   $('oLod').addEventListener('change', () => { if (S.sources[S.srcIdx] && S.sources[S.srcIdx].kind === 'gta_sa') loadSelected(false); else scheduleRebuild(); });
+  // strip-links only takes effect while the model is (re-)loaded and scrubbed, not at the lighter
+  // rebuild step, so it needs a full reload too - see scrubModel()/loadModel() in 40_import.js.
+  $('oStripLinks').addEventListener('change', () => loadSelected(false));
   const rebuildIds = ['oName', 'oScale', 'oLength', 'oUnit', 'oFlip', 'oGlass', 'oInterior', 'oLights', 'oMaxTris', 'oTarget', 'oTex', 'oRig', 'oTires', 'oNewTires', 'oSpeed', 'oAChassis', 'oAChassisReal', 'oObj', 'axR', 'axU', 'axF'];
   for (const id of rebuildIds) $(id).addEventListener(id === 'oName' || id.startsWith('o') && $(id).type === 'number' ? 'input' : 'change', scheduleRebuild);
   for (const el of document.querySelectorAll('input[name=oDrive]')) el.addEventListener('change', scheduleRebuild);

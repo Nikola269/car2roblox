@@ -25,6 +25,24 @@ _INTERIOR = {"interior", "seat", "seats", "dash", "dashboard", "steering", "cabi
              "cockpit", "ped", "headliner"}
 _LIGHT = {"light", "lights", "lamp", "lamps", "headlight", "headlights", "taillight",
           "taillights", "indicator", "indicators", "foglight"}
+# a part named like one of these is never *meant* to be see-through, whatever its material's alpha
+# says - every importer's "transparent" flag is a heuristic read off a colour/alpha channel that
+# real exporters routinely leave a little under fully opaque for AO/sheen/dirt/decal baking, not to
+# signal real glass (see the "0.85" comments in imp_gtasa.py / imp_beamng.py / imp_generic.py). That
+# false "transparent" reading is what swept an unrelated body panel, the chassis or a cage mesh into
+# "glass" below and made it render as a translucent ghost double over the solid body underneath.
+_NOT_GLASS = {"bumper", "bumpers", "bonnet", "bonnets", "hood", "hoods", "roof", "roofs", "door",
+              "doors", "fender", "fenders", "wing", "wings", "mirror", "mirrors", "trim", "trims",
+              "grille", "grill", "grilles", "grills", "spoiler", "spoilers", "exhaust", "exhausts",
+              "chassis", "cage", "cages", "frame", "frames", "subframe", "crossmember", "shell",
+              "panel", "panels", "skirt", "skirts", "bootlid", "boot", "boots", "trunk", "tailgate",
+              "hatch", "hatches", "pillar", "pillars", "sill", "sills", "bar", "bars", "guard",
+              "guards", "plate", "plates", "badge", "badges", "handle", "handles", "wiper", "wipers",
+              "antenna", "antennas", "aerial", "vent", "vents", "scoop", "scoops", "splitter",
+              "splitters", "diffuser", "diffusers", "undertray", "underbody", "engine", "engines",
+              "radiator", "radiators", "intercooler", "turbo", "turbos", "bay", "bays", "floor",
+              "floors", "rail", "rails", "mount", "mounts", "bracket", "brackets", "decal", "decals",
+              "sticker", "stickers", "livery"}
 _SLOT_TOKENS = {"fl": "FL", "fr": "FR", "rl": "RL", "rr": "RR", "lf": "FL", "rf": "FR",
                 "lb": "RL", "lr": "RL", "rb": "RR", "bl": "RL", "br": "RR", "lm": "ML", "rm": "MR"}
 
@@ -56,7 +74,7 @@ def classify_part(name: str, material_names: Iterable[str] = (), transparent: bo
     mt = set()
     for m in material_names:
         mt |= set(tokens(m))
-    if transparent and (mt & _GLASS or not (tk & _LIGHT)):
+    if transparent and (mt & _GLASS or not (tk & _LIGHT or tk & _NOT_GLASS)):
         return "glass"
     if mt & _GLASS:
         return "glass"
