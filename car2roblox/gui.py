@@ -37,11 +37,12 @@ SOURCES = {"Detect automatically": "auto", "GTA San Andreas (.dff)": "gta_sa",
 UNIT_CHOICES = ["Auto"] + list(UNITS)
 DRIVETRAINS = ["awd", "rwd", "fwd"]
 
-# colours taken from the preview's dusk theme so the window and the 3D view belong together
+# a garage at dusk: asphalt and steel, with a brake-caliper amber accent - the same palette as the
+# browser app and the preview's dusk theme, so every surface of the tool belongs to one workshop
 PALETTE = {
-    "bg": "#0b1022", "panel": "#131a35", "panel2": "#1a2347", "line": "#2d3b73", "field": "#0e1530",
-    "text": "#e9edff", "muted": "#9aa7d8", "accent": "#6ea0ff", "on_accent": "#0b1022",
-    "warm": "#ffaa78", "ok": "#7ee2a8", "bad": "#ff7a8a",
+    "bg": "#14151a", "panel": "#1e2026", "panel2": "#272a31", "line": "#383b42", "field": "#17191f",
+    "text": "#eceae4", "muted": "#a3a7ae", "accent": "#f2a93c", "on_accent": "#1a1000",
+    "warm": "#f4ab6e", "ok": "#7ee2a8", "bad": "#ff6e55",
 }
 
 STAGE_W, STAGE_H = 560, 350            # the preview picture; follows the window size
@@ -343,7 +344,7 @@ class ConverterApp:
                foreground=[("disabled", P["muted"])])
         st.configure("Accent.TButton", background=P["accent"], foreground=P["on_accent"],
                      font=("Segoe UI", 11, "bold"), padding=(22, 8), bordercolor=P["accent"])
-        st.map("Accent.TButton", background=[("active", "#8db5ff"), ("disabled", P["line"])],
+        st.map("Accent.TButton", background=[("active", "#ffc372"), ("disabled", P["line"])],
                foreground=[("disabled", P["muted"])])
         st.configure("TScrollbar", background=P["panel2"], troughcolor=P["field"], bordercolor=P["line"],
                      arrowcolor=P["muted"])
@@ -359,13 +360,17 @@ class ConverterApp:
         self.header = tk.Canvas(self.root, height=HEADER_H, highlightthickness=0, bd=0, bg=P["bg"])
         self.header.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.header_img = self.header.create_image(0, 0, anchor="nw")
-        self.header.create_text(28, 38, anchor="w", text=self.title_text, fill="#ffffff",
-                                font=("Segoe UI", 28, "bold"))
-        self.header.create_text(30, 76, anchor="w", fill="#d6defc", font=("Segoe UI", 11),
+        title_id = self.header.create_text(28, 38, anchor="w", text=self.title_text, fill="#ffffff",
+                                           font=("Segoe UI", 28, "bold"))
+        self.header.create_text(30, 76, anchor="w", fill="#e7e1d2", font=("Segoe UI", 11),
                                 text="GTA San Andreas, GTA V and BeamNG cars  >  drivable Roblox cars")
-        self.header_chip = self.header.create_rectangle(190, 24, 190 + 64, 24 + 24, outline=P["warm"],
-                                                        fill=P["bg"])
-        self.header.create_text(190 + 32, 36, text=self.version_text, fill=P["warm"],
+        # the chip sits just after the wordmark - measured, not a fixed x, so a wider substitute
+        # font (the title's exact typeface varies by OS) never overlaps the title text
+        box = self.header.bbox(title_id)
+        chip_x, chip_w = (box[2] if box else 190) + 14, 64
+        self.header_chip = self.header.create_rectangle(chip_x, 24, chip_x + chip_w, 24 + 24,
+                                                         outline=P["warm"], fill=P["bg"])
+        self.header.create_text(chip_x + chip_w / 2, 36, text=self.version_text, fill=P["warm"],
                                 font=("Segoe UI", 10, "bold"))
 
     def _card(self, **grid: Any) -> Any:

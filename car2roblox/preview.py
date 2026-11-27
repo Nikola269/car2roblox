@@ -27,12 +27,12 @@ THEMES: Dict[str, Dict[str, Tuple[float, ...]]] = {
         "top": (9, 13, 32), "mid": (41, 52, 112), "horizon": (214, 126, 146), "glow": (255, 170, 120),
         "ground": (15, 20, 38), "ground_far": (66, 62, 112), "grid": (70, 120, 210),
         "amb_sky": (0.58, 0.64, 0.95), "amb_gnd": (0.16, 0.17, 0.26), "sun": (1.0, 0.9, 0.78),
-        "arrow": (110, 160, 255)},
+        "arrow": (242, 169, 60)},   # brake-caliper amber, same accent as the rest of the app
     "day": {
         "top": (110, 160, 226), "mid": (170, 200, 238), "horizon": (232, 238, 246), "glow": (255, 244, 214),
         "ground": (198, 206, 218), "ground_far": (226, 232, 240), "grid": (150, 164, 188),
         "amb_sky": (0.80, 0.86, 0.96), "amb_gnd": (0.36, 0.36, 0.40), "sun": (1.0, 0.97, 0.9),
-        "arrow": (30, 90, 216)},
+        "arrow": (201, 121, 14)},   # darker amber for contrast against the light sky
 }
 SUN = np.array([-0.45, 0.85, 0.35], dtype=np.float32)
 SUN /= np.linalg.norm(SUN)
